@@ -88,7 +88,7 @@ if (isset($authkey) && $authkey == true) {
                 error_log("Employer found: " . $user_data['user_id']);
 
                 // Check user account status
-                if ($user_data['status'] == 'inactive' || $user_data['status'] == 'suspended') {
+                if ( $user_data['status'] == 'suspended') {
                     error_log("Account inactive or suspended");
                     $errors[] = "Your account is " . $user_data['status'] . ". Please contact support.";
                 } else {
@@ -126,16 +126,17 @@ if (isset($authkey) && $authkey == true) {
             if (!$company_data) {
                 error_log("Company data not found for employer");
                 $errors[] = "Company information not found. Please contact support.";
-            } else {
-                // Check company verification status
-                if ($company_data['status'] == 'pending_verification') {
-                    error_log("Company pending verification");
-                    $errors[] = "Your company is pending verification. You'll be notified once verified.";
-                } elseif ($company_data['status'] == 'inactive' || $company_data['status'] == 'suspended') {
-                    error_log("Company inactive or suspended");
-                    $errors[] = "Your company is " . $company_data['status'] . ". Please contact support.";
-                }
-            }
+            } 
+            // else {
+            //     // Check company verification status
+            //     // if ($company_data['status'] == 'pending_verification') {
+            //     //     error_log("Company pending verification");
+            //     //     $errors[] = "Your company is pending verification. You'll be notified once verified.";
+            //     // } elseif ($company_data['status'] == 'inactive' || $company_data['status'] == 'suspended') {
+            //     //     error_log("Company inactive or suspended");
+            //     //     $errors[] = "Your company is " . $company_data['status'] . ". Please contact support.";
+            //     // }
+            // }
         }
 
         // Final check and response

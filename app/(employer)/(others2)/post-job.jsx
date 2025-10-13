@@ -1,25 +1,25 @@
-import CustomInput from '@/components/CustomInput';
 import CustomDropdown from '@/components/CustomDropdown';
-import SkillsInput from '@/components/SkillsInput';
+import CustomInput from '@/components/CustomInput';
 import SafeAreaWrapper from '@/components/SafeAreaWrapper';
+import SkillsInput from '@/components/SkillsInput';
 import apiService from '@/services/apiService';
 import theme from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Dimensions,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    StatusBar,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Dimensions,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StatusBar,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 const { width } = Dimensions.get('window');
@@ -283,13 +283,24 @@ export default function CreateJob() {
         console.log('✅ Job posted successfully!', response.data);
         setShowSuccessModal(true);
       } else {
-        const errorMessage = response.message || (isDraft ? 'Failed to save draft' : 'Failed to publish job');
+        // Display detailed error messages from the API
+        let errorMessage = '';
+
+        if (response.errors && Array.isArray(response.errors) && response.errors.length > 0) {
+          // Show all validation errors
+          errorMessage = response.errors.join('\n• ');
+          errorMessage = '• ' + errorMessage;
+          console.log('❌ Validation errors:', response.errors);
+        } else if (response.message) {
+          // Show general error message
+          errorMessage = response.message;
+        } else {
+          // Fallback error message
+          errorMessage = isDraft ? 'Failed to save draft' : 'Failed to publish job';
+        }
+
         console.log('❌ Job post failed:', errorMessage);
         setPostError(errorMessage);
-
-        if (response.errors && response.errors.length > 0) {
-          console.log('❌ Validation errors:', response.errors);
-        }
       }
     } catch (error) {
       console.error('❌ Post job exception:', error);
@@ -542,7 +553,7 @@ export default function CreateJob() {
   );
 
   return (
-    <SafeAreaWrapper backgroundColor={theme.colors.background.primary}>
+    <SafeAreaWrapper backgroundColor={theme.colors.background.primary} edges={['left', 'right', 'bottom']}>
       <StatusBar
         barStyle="dark-content"
         backgroundColor={theme.colors.background.card}
@@ -912,12 +923,29 @@ export default function CreateJob() {
                 borderLeftColor: theme.colors.status.error,
               }}
             >
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: theme.spacing.xs }}>
+                <Ionicons
+                  name="alert-circle"
+                  size={18}
+                  color={theme.colors.status.error}
+                  style={{ marginRight: theme.spacing.sm, marginTop: 2 }}
+                />
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.sm,
+                    fontFamily: theme.typography.fonts.bold,
+                    color: theme.colors.status.error,
+                  }}
+                >
+                  Error
+                </Text>
+              </View>
               <Text
                 style={{
                   fontSize: theme.typography.sizes.sm,
-                  fontFamily: theme.typography.fonts.medium,
+                  fontFamily: theme.typography.fonts.regular,
                   color: theme.colors.status.error,
-                  textAlign: 'center',
+                  lineHeight: theme.typography.sizes.sm * 1.5,
                 }}
               >
                 {postError}

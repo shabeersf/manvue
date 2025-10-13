@@ -3,6 +3,8 @@ export const API_CONFIG = {
   // Base URLs
   BASE_URL: "https://work.phpwebsites.in/manvue/api",
   BASE_IMG_URL: "https://work.phpwebsites.in/manvue/photos",
+  // BASE_URL: "https://work.phpwebsites.in/manvue/api",
+  // BASE_IMG_URL: "https://work.phpwebsites.in/manvue/photos",
 
   // API Endpoints
   ENDPOINTS: {
@@ -14,6 +16,8 @@ export const API_CONFIG = {
     HOME: "/home.php", // New home dashboard endpoint
     GET_PROFILE: "/get-profile.php",
     UPDATE_PROFILE: "/update-profile.php",
+    VERIFY_EMAIL: "/verify-email.php",
+    RESEND_VERIFICATION: "/resend-verification.php",
 
     // Employer endpoints
     EMPLOYER_SIGNUP: "/employer-signup.php",

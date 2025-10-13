@@ -5,7 +5,8 @@
       "Bash(wc:*)",
       "Bash(grep:*)",
       "Bash(dir:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []

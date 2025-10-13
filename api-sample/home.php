@@ -1,5 +1,5 @@
 <?php
-require_once "includes/includepath.php";
+require_once 'includes/includepath.php';
 
 // Initialize classes
 $api = new api();
@@ -8,41 +8,41 @@ $objgen = new general();
 
 $authkey = true;
 
-// Validate request method (changed to POST to match your service)
-$api->valide_method('POST');
+// Validate request method ( changed to POST to match your service )
+$api->valide_method( 'POST' );
 
-$c_date = date('Y-m-d H:i:s');
+$c_date = date( 'Y-m-d H:i:s' );
 
-if (isset($authkey) && $authkey == true) {
+if ( isset( $authkey ) && $authkey == true ) {
 
-    error_reporting(E_ALL ^ (E_NOTICE | E_WARNING | E_DEPRECATED));
+    error_reporting( E_ALL ^ ( E_NOTICE | E_WARNING | E_DEPRECATED ) );
 
     try {
-        error_log("=== HOME DATA REQUEST START ===");
-        
-        // Get user_id from request
-        $user_id = isset($rest->_request['user_id']) ? (int)$objgen->check_input($rest->_request['user_id']) : 0;
-        
-        error_log("User ID: " . $user_id);
-        
-        $errors = [];
-        
-        // Validate user_id
-        if (empty($user_id)) {
-            $errors[] = "User ID is required";
-        }
-        
-        // Verify user exists and is a job seeker
-        if (empty($errors)) {
-            $user_check = $objgen->get_Onerow("users", "and user_id=" . (int)$user_id . " and user_type='jobseeker' and status='active'");
+        error_log( '=== HOME DATA REQUEST START ===' );
 
-            if (!$user_check) {
-                $errors[] = "Invalid user or user is not a job seeker";
+        // Get user_id from request
+        $user_id = isset( $rest->_request[ 'user_id' ] ) ? ( int )$objgen->check_input( $rest->_request[ 'user_id' ] ) : 0;
+
+        error_log( 'User ID: ' . $user_id );
+
+        $errors = [];
+
+        // Validate user_id
+        if ( $user_id <= 0 ) {
+            $errors[] = 'User ID is required';
+        }
+
+        // Verify user exists and is a job seeker
+        if ( empty( $errors ) ) {
+            $user_check = $objgen->get_Onerow( 'users', 'and user_id=' . ( int )$user_id . " and user_type='jobseeker'" );
+
+            if ( !$user_check ) {
+                $errors[] = 'Invalid user or user is not a job seeker';
             }
         }
-        
-        if (empty($errors)) {
-            
+
+        if ( empty( $errors ) ) {
+
             // Initialize response data
             $data = [
                 'user_id' => $user_id,
@@ -55,64 +55,64 @@ if (isset($authkey) && $authkey == true) {
                 'job_recommendations' => [],
                 'recent_activity' => []
             ];
-            
+
             // 1. Get User Basic Information
-            error_log("Fetching user basic info...");
-            $user_data = $objgen->get_Onerow("users", "and user_id=" . (int)$user_id);
-            
-            if ($user_data) {
-                $data['first_name'] = $objgen->check_tag($user_data['first_name']);
-                $data['last_name'] = $objgen->check_tag($user_data['last_name']);
-                $data['email'] = $objgen->check_tag($user_data['email']);
-                $data['profile_image'] = $user_data['profile_image'] ? IMAGE_PATH . "medium/" . $user_data['profile_image'] : "";
+            error_log( 'Fetching user basic info...' );
+            $user_data = $objgen->get_Onerow( 'users', 'and user_id=' . ( int )$user_id );
+
+            if ( $user_data ) {
+                $data[ 'first_name' ] = $objgen->check_tag( $user_data[ 'first_name' ] );
+                $data[ 'last_name' ] = $objgen->check_tag( $user_data[ 'last_name' ] );
+                $data[ 'email' ] = $objgen->check_tag( $user_data[ 'email' ] );
+                $data[ 'profile_image' ] = $user_data[ 'profile_image' ] ? IMAGE_PATH . 'medium/' . $user_data[ 'profile_image' ] : '';
             }
-            
+
             // 2. Get User Profile Data
-            error_log("Fetching user profile...");
-            $profile_data = $objgen->get_Onerow("user_profiles", "and user_id=" . (int)$user_id);
-            
-            if ($profile_data) {
-                $data['profile'] = [
-                    'current_job_title' => $profile_data['current_job_title'] ? $objgen->check_tag($profile_data['current_job_title']) : '',
-                    'current_company' => $profile_data['current_company'] ? $objgen->check_tag($profile_data['current_company']) : '',
-                    'experience_years' => (int)$profile_data['experience_years'],
-                    'experience_months' => (int)$profile_data['experience_months'],
-                    'availability_status' => $objgen->check_tag($profile_data['availability_status']),
-                    'profile_completeness' => (int)$profile_data['profile_completeness']
+            error_log( 'Fetching user profile...' );
+            $profile_data = $objgen->get_Onerow( 'user_profiles', 'and user_id=' . ( int )$user_id );
+
+            if ( $profile_data ) {
+                $data[ 'profile' ] = [
+                    'current_job_title' => $profile_data[ 'current_job_title' ] ? $objgen->check_tag( $profile_data[ 'current_job_title' ] ) : '',
+                    'current_company' => $profile_data[ 'current_company' ] ? $objgen->check_tag( $profile_data[ 'current_company' ] ) : '',
+                    'experience_years' => ( int )$profile_data[ 'experience_years' ],
+                    'experience_months' => ( int )$profile_data[ 'experience_months' ],
+                    'availability_status' => $objgen->check_tag( $profile_data[ 'availability_status' ] ),
+                    'profile_completeness' => ( int )$profile_data[ 'profile_completeness' ]
                 ];
             }
-            
+
             // 3. Calculate Statistics
-            error_log("Calculating statistics...");
-            
+            error_log( 'Calculating statistics...' );
+
             // Profile completion
-            $profile_completion = $profile_data ? (int)$profile_data['profile_completeness'] : 0;
-            
+            $profile_completion = $profile_data ? ( int )$profile_data[ 'profile_completeness' ] : 0;
+
             // Total applications
-            $total_applications = $objgen->get_AllRowscnt("applications", "and user_id=" . (int)$user_id);
+            $total_applications = $objgen->get_AllRowscnt( 'applications', 'and user_id=' . ( int )$user_id );
 
             // Applications by status
-            $pending_applications = $objgen->get_AllRowscnt("applications", "and user_id=" . (int)$user_id . " and application_status='submitted'");
-            $shortlisted_applications = $objgen->get_AllRowscnt("applications", "and user_id=" . (int)$user_id . " and application_status='shortlisted'");
+            $pending_applications = $objgen->get_AllRowscnt( 'applications', 'and user_id=' . ( int )$user_id . " and application_status='submitted'" );
+            $shortlisted_applications = $objgen->get_AllRowscnt( 'applications', 'and user_id=' . ( int )$user_id . " and application_status='shortlisted'" );
 
             // Scheduled interviews
-            $scheduled_interviews = $objgen->get_AllRowscnt("interviews", "and jobseeker_id=" . (int)$user_id . " and interview_status in ('scheduled', 'confirmed') and scheduled_date >= CURDATE()");
+            $scheduled_interviews = $objgen->get_AllRowscnt( 'interviews', 'and jobseeker_id=' . ( int )$user_id . " and interview_status in ('scheduled', 'confirmed') and scheduled_date >= CURDATE()" );
 
-            // Profile views (from notifications)
-            $profile_views = $objgen->get_AllRowscnt("notifications", "and user_id=" . (int)$user_id . " and notification_type='profile_viewed' and created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
-            
-            $data['statistics'] = [
+            // Profile views ( from notifications )
+            $profile_views = $objgen->get_AllRowscnt( 'notifications', 'and user_id=' . ( int )$user_id . " and notification_type='profile_viewed' and created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)" );
+
+            $data[ 'statistics' ] = [
                 'profile_completion' => $profile_completion,
-                'total_applications' => (int)$total_applications,
-                'pending_applications' => (int)$pending_applications,
-                'shortlisted_applications' => (int)$shortlisted_applications,
-                'interview_scheduled' => (int)$scheduled_interviews,
-                'profile_views_week' => (int)$profile_views
+                'total_applications' => ( int )$total_applications,
+                'pending_applications' => ( int )$pending_applications,
+                'shortlisted_applications' => ( int )$shortlisted_applications,
+                'interview_scheduled' => ( int )$scheduled_interviews,
+                'profile_views_week' => ( int )$profile_views
             ];
-            
-            // 4. Get Job Recommendations (Jobs from companies that viewed profile or matched)
-            error_log("Fetching job recommendations...");
-            
+
+            // 4. Get Job Recommendations ( Jobs from companies that viewed profile or matched )
+            error_log( 'Fetching job recommendations...' );
+
             // Get user's skills for matching
             $user_skills_sql = "SELECT GROUP_CONCAT(skill_id) as skill_ids FROM user_skills WHERE user_id=" . (int)$user_id;
             $skills_result = $objgen->get_AllRows_qry($user_skills_sql);
@@ -376,8 +376,8 @@ if (isset($authkey) && $authkey == true) {
         'status' => 'Error',
         'message' => "Unauthorized access",
         'success' => false
-    ];
-    $rest->response($api->json($response_arr), 401);
-}
+        ];
+        $rest->response( $api->json( $response_arr ), 401 );
+    }
 
-?>
+    ?>

@@ -124,7 +124,8 @@ if (isset($authkey) && $authkey == true) {
             if (!$company) {
                 $errors[] = "Company not found";
             } elseif ($company['status'] !== 'active') {
-                $errors[] = "Company is not active. Status: " . $company['status'];
+                $errors[] = "Your company account is currently under verification. You will be able to post jobs once the verification process is complete.";
+
             }
         }
 

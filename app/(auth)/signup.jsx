@@ -2,6 +2,7 @@ import CustomDropdown from "@/components/CustomDropdown";
 import CustomInput from "@/components/CustomInput";
 import SafeAreaWrapper from "@/components/SafeAreaWrapper";
 import SkillsInput from "@/components/SkillsInput";
+import VerificationModal from "@/components/VerificationModal";
 import apiService from "@/services/apiService";
 import theme from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
@@ -51,22 +52,22 @@ export default function Signup() {
   experience_months: 0,
   current_salary: "",
   expected_salary: "",
-  notice_period: "1_month",
-  job_type_preference: ["full_time"],
-  work_mode_preference: ["hybrid"],
+  notice_period: "",
+  job_type_preference: [],
+  work_mode_preference: [],
   willing_to_relocate: 0,
-  availability_status: "open_to_work",
+  availability_status: "",
   linkedin_url: "",
   github_url: "",
   portfolio_url: "",
-  profile_visibility: "public",
+  profile_visibility: "",
 
   // Employer specific fields
   company_name: "",
   company_website: "",
   company_size: "",
   industry: "",
-  company_type: "startup",
+  company_type: "",
   founded_year: '',
   headquarters_address: "",
   headquarters_city: "",
@@ -81,6 +82,10 @@ export default function Signup() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [signupError, setSignupError] = useState("");
+
+  // Email verification state (for new verification-first flow)
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [signupEmail, setSignupEmail] = useState('');
 
   // Dropdown Options
   const genderOptions = [
@@ -303,6 +308,18 @@ export default function Signup() {
       newErrors.confirm_password = "Passwords do not match";
     }
 
+    // Mandatory dropdown validations
+    if (!formData.gender) newErrors.gender = "Gender is required";
+    if (!formData.notice_period) newErrors.notice_period = "Notice period is required";
+    if (!formData.job_type_preference || formData.job_type_preference.length === 0) {
+      newErrors.job_type_preference = "Job type preference is required";
+    }
+    if (!formData.work_mode_preference || formData.work_mode_preference.length === 0) {
+      newErrors.work_mode_preference = "Work mode preference is required";
+    }
+    if (!formData.availability_status) newErrors.availability_status = "Availability status is required";
+    if (!formData.profile_visibility) newErrors.profile_visibility = "Profile visibility is required";
+
     // URL validations
     const urlRegex = /^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$/;
 
@@ -404,47 +421,22 @@ export default function Signup() {
       console.log("📦 Full signup response:", response);
 
       if (response.success) {
-        // Store comprehensive user data in SecureStore
-        if (response.data?.user_id) {
-          await SecureStore.setItemAsync('user_id', response.data.user_id.toString());
-          console.log('✅ User ID stored in SecureStore:', response.data.user_id);
+        // New flow: Check if verification is required (should always be true now)
+        if (response.requires_verification || response.data?.verification_required) {
+          // Store email for verification modal
+          setSignupEmail(formData.email);
+
+          // Show verification modal
+          setShowVerificationModal(true);
+          setIsLoading(false);
+
+          console.log('✅ Signup data submitted, verification modal shown');
+          return;
         }
 
-        if (response.data?.user_type) {
-          await SecureStore.setItemAsync('user_type', response.data.user_type);
-          console.log('✅ User type stored in SecureStore:', response.data.user_type);
-        }
-
-        // Store JWT token in SecureStore for better security
-        if (response.token) {
-          await SecureStore.setItemAsync('jwt_token', response.token);
-          console.log('✅ JWT token stored in SecureStore');
-        }
-
-        // Store user email and name for quick access
-        if (response.data?.email) {
-          await SecureStore.setItemAsync('user_email', response.data.email);
-        }
-
-        if (response.data?.first_name) {
-          await SecureStore.setItemAsync('user_first_name', response.data.first_name);
-        }
-
-        if (response.data?.last_name) {
-          await SecureStore.setItemAsync('user_last_name', response.data.last_name);
-        }
-
-        // Store user status
-        if (response.data?.status) {
-          await SecureStore.setItemAsync('user_status', response.data.status);
-        }
-
-        // Redirect to jobseeker home page
-        console.log('✅ Signup successful, User ID:', response.data.user_id, 'User Type:', response.data.user_type);
-
-        router.replace('/jobseeker/home');
-
-        return; // Don't clear form or show modal, just redirect
+        // Fallback (should not reach here with new flow, but keeping for safety)
+        console.warn('⚠️ Unexpected response: verification not required');
+        setSignupError('Unexpected response from server. Please try again.');
 
       } else {
         console.log("response",response)
@@ -469,6 +461,18 @@ export default function Signup() {
     setShowSuccessModal(false);
     // Navigate to jobseeker home
     router.push('/jobseeker/home');
+  };
+
+  // Verification handler (called when verification succeeds)
+  const handleVerificationSuccess = (userData) => {
+    console.log('✅ Verification successful, user data received:', userData);
+    // The VerificationModal component handles navigation automatically
+  };
+
+  // Close verification modal handler
+  const handleCloseVerification = () => {
+    setShowVerificationModal(false);
+    // Optionally navigate back or show a message
   };
 
   // User Type Selection Card
@@ -549,6 +553,7 @@ export default function Signup() {
       )}
     </TouchableOpacity>
   );
+
 
 
   // Success Modal
@@ -857,9 +862,10 @@ export default function Signup() {
                 value={formData.gender}
                 onSelect={(value) => handleInputChange("gender", value)}
                 options={genderOptions}
-                placeholder="Select gender (optional)"
+                placeholder="Choose option"
                 icon="person-outline"
                 error={errors.gender}
+                required
               />
 
               <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
@@ -1050,9 +1056,10 @@ export default function Signup() {
                     value={formData.notice_period}
                     onSelect={(value) => handleInputChange("notice_period", value)}
                     options={noticePeriodOptions}
-                    placeholder="Select notice period"
+                    placeholder="Choose option"
                     icon="calendar-outline"
                     error={errors.notice_period}
+                    required
                   />
 
                   <CustomDropdown
@@ -1064,9 +1071,10 @@ export default function Signup() {
                       handleInputChange("job_type_preference", newValues.slice(0, 3)); // Max 3 selections
                     }}
                     options={jobTypeOptions}
-                    placeholder="Select job type"
+                    placeholder="Choose option"
                     icon="briefcase-outline"
                     error={errors.job_type_preference}
+                    required
                   />
 
                   <CustomDropdown
@@ -1078,9 +1086,10 @@ export default function Signup() {
                       handleInputChange("work_mode_preference", newValues.slice(0, 3)); // Max 3 selections
                     }}
                     options={workModeOptions}
-                    placeholder="Select work mode"
+                    placeholder="Choose option"
                     icon="home-outline"
                     error={errors.work_mode_preference}
+                    required
                   />
 
                   <CustomDropdown
@@ -1088,9 +1097,10 @@ export default function Signup() {
                     value={formData.availability_status}
                     onSelect={(value) => handleInputChange("availability_status", value)}
                     options={availabilityOptions}
-                    placeholder="Select availability"
+                    placeholder="Choose option"
                     icon="checkmark-circle-outline"
                     error={errors.availability_status}
+                    required
                   />
 
                   <CustomDropdown
@@ -1098,9 +1108,10 @@ export default function Signup() {
                     value={formData.profile_visibility}
                     onSelect={(value) => handleInputChange("profile_visibility", value)}
                     options={profileVisibilityOptions}
-                    placeholder="Select profile visibility"
+                    placeholder="Choose option"
                     icon="eye-outline"
                     error={errors.profile_visibility}
+                    required
                   />
 
                   {/* Professional URLs Section */}
@@ -1276,6 +1287,15 @@ export default function Signup() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Email Verification Modal - New Separate Component */}
+      <VerificationModal
+        visible={showVerificationModal}
+        email={signupEmail}
+        userType={userType}
+        onVerified={handleVerificationSuccess}
+        onClose={handleCloseVerification}
+      />
 
       {/* Success Modal */}
       <SuccessModal />

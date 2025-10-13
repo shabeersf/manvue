@@ -1,5 +1,6 @@
 <?php
 require_once "includes/includepath.php";
+require_once 'PHPMailer/mailconfig.php';
 
 // Initialize classes
 $api = new api();
@@ -18,7 +19,7 @@ if (isset($authkey) && $authkey == true) {
     error_reporting(E_ALL ^ (E_NOTICE | E_WARNING | E_DEPRECATED));
 
     try {
-        error_log("=== EMPLOYER SIGNUP REQUEST START ===");
+        error_log("=== EMPLOYER SIGNUP REQUEST START (VERIFICATION-FIRST FLOW) ===");
         error_log("POST data: " . json_encode($rest->_request));
 
         // Get contact person data
@@ -41,7 +42,7 @@ if (isset($authkey) && $authkey == true) {
         $company_description = isset($rest->_request['companyDescription']) ? trim($objgen->check_input($rest->_request['companyDescription'])) : '';
 
         // Get login credentials
-        $email = isset($rest->_request['email']) ? trim($objgen->check_input($rest->_request['email'])) : '';
+        $email = isset($rest->_request['email']) ? strtolower(trim($objgen->check_input($rest->_request['email']))) : '';
         $password = isset($rest->_request['password']) ? $rest->_request['password'] : '';
 
         error_log("Company: " . $company_name . ", Contact: " . $first_name . " " . $last_name . ", Mobile: " . $mobile_number);
@@ -82,180 +83,237 @@ if (isset($authkey) && $authkey == true) {
         if (empty($email)) {
             $errors[] = "Email is required";
         } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $errors[] = "Please enter a valid email address";
+            $errors[] = "Invalid email format";
         }
 
         if (empty($password)) {
             $errors[] = "Password is required";
-        } elseif (strlen($password) < 8) {
-            $errors[] = "Password must be at least 8 characters";
+        } elseif (strlen($password) < 6) {
+            $errors[] = "Password must be at least 6 characters";
         }
 
         // Check if email already exists as employer - allow dual accounts
-        if (empty($errors)) {
-            $email_check = $objgen->get_Onerow("users", "and email='" . $email . "' and user_type='employer'");
-            if ($email_check) {
+        if (!empty($email) && empty($errors)) {
+            $email_check = $objgen->chk_Ext("users", "email='" . $email . "' and user_type='employer'");
+            if ($email_check > 0) {
                 $errors[] = "Email already registered as employer";
             }
         }
 
         // Check if mobile already exists as employer - allow dual accounts
-        if (empty($errors)) {
-            $mobile_check = $objgen->get_Onerow("users", "and phone='" . $mobile_number . "' and user_type='employer'");
-            if ($mobile_check) {
+        if (!empty($mobile_number) && empty($errors)) {
+            $mobile_check = $objgen->chk_Ext("users", "phone='" . $mobile_number . "' and user_type='employer'");
+            if ($mobile_check > 0) {
                 $errors[] = "Mobile number already registered as employer";
             }
         }
 
         // Check if GST number already exists
-        if (empty($errors)) {
-            $gst_check = $objgen->get_Onerow("companies", "and gst_number='" . $gst_number . "'");
-            if ($gst_check) {
+        if (!empty($gst_number) && empty($errors)) {
+            $gst_check = $objgen->chk_Ext("companies", "gst_number='" . $gst_number . "'");
+            if ($gst_check > 0) {
                 $errors[] = "GST number already registered";
             }
         }
 
-        // If validation passed, proceed with registration
+        // If validation passed, proceed with storing signup data temporarily
         if (empty($errors)) {
 
-            // Encrypt password
-            $encrypted_password = $objgen->encrypt_pass($password);
+            // Prepare signup data to store temporarily in email_verifications table
+            $signup_data = [
+                'user_type' => 'employer',
+                'first_name' => $first_name,
+                'last_name' => $last_name,
+                'email' => $email,
+                'phone' => $mobile_number,
+                'password' => $password, // Will be encrypted when creating user
+                'gender' => $gender,
+                'location_city' => $city,
+                'location_state' => $state,
+                'employer_data' => [
+                    'company_name' => $company_name,
+                    'full_address' => $full_address,
+                    'city' => $city,
+                    'state' => $state,
+                    'gst_number' => $gst_number,
+                    'industry' => $industry,
+                    'company_website' => $company_website,
+                    'company_size' => $company_size,
+                    'company_type' => $company_type,
+                    'founded_year' => $founded_year,
+                    'company_description' => $company_description
+                ]
+            ];
 
-            error_log("Creating employer user account...");
+            // Convert signup data to JSON
+            $signup_data_json = json_encode($signup_data);
+            error_log("Signup data prepared, length: " . strlen($signup_data_json) . " bytes");
 
-            // Build user insert query
-            $user_columns = "first_name, last_name, email, phone, password, user_type, email_verified, created_at, updated_at";
-            $user_values = "'" . $first_name . "', '" . $last_name . "', '" . $email . "', '" . $mobile_number . "', '" . $encrypted_password . "', 'employer', 0, '" . $c_date . "', '" . $c_date . "'";
+            // Generate 6-digit verification code
+            $verification_code = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
 
-            // Add optional gender
-            if ($gender) {
-                $user_columns .= ", gender";
-                $user_values .= ", '" . $gender . "'";
-            }
+            // Set expiration time (15 minutes from now)
+            $expires_at = date('Y-m-d H:i:s', strtotime('+15 minutes'));
 
-            // Add optional city/state to users table
-            if ($city) {
-                $user_columns .= ", location_city";
-                $user_values .= ", '" . $city . "'";
-            }
+            // Check if there's already a pending verification for this email and user_type
+            $existing_verification = $objgen->get_Onerow(
+                "email_verifications",
+                "and email='$email' and user_type='employer' and is_verified=0"
+            );
 
-            if ($state) {
-                $user_columns .= ", location_state";
-                $user_values .= ", '" . $state . "'";
-            }
+            if ($existing_verification) {
+                // Update existing verification record
+                error_log("Updating existing verification record for: $email");
+                $verification_update = $objgen->upd_Row(
+                    "email_verifications",
+                    "verification_code='$verification_code', expires_at='$expires_at', signup_data='$signup_data_json', created_at='$c_date'",
+                    "verification_id=" . $existing_verification['verification_id']
+                );
 
-            // Insert into users table (status defaults to 'active' per schema)
-            $user_insert = $objgen->ins_Row("users", $user_columns, $user_values);
-
-            if ($user_insert != "") {
-                $errors[] = "Failed to create user account: " . $user_insert;
-                error_log("User insert failed: " . $user_insert);
+                if ($verification_update != "") {
+                    $errors[] = "Failed to update verification record: " . $verification_update;
+                    error_log("Verification update error: " . $verification_update);
+                }
             } else {
-                $user_id = $objgen->get_insetId();
-                error_log("User created with ID: " . $user_id);
+                // Insert new verification record with signup data
+                error_log("Creating new verification record for: $email");
+                $verification_insert = $objgen->ins_Row(
+                    'email_verifications',
+                    'email, user_type, verification_code, signup_data, expires_at, created_at',
+                    "'$email', 'employer', '$verification_code', '$signup_data_json', '$expires_at', '$c_date'"
+                );
 
-                // Insert into companies table
-                error_log("Creating company record...");
-
-                // Build company insert query
-                $company_columns = "user_id, company_name, gst_number, industry, status, created_at, updated_at";
-                $company_values = "'" . $user_id . "', '" . $company_name . "', '" . $gst_number . "', '" . $industry . "', 'pending_verification', '" . $c_date . "', '" . $c_date . "'";
-
-                // Add optional fields
-                if ($full_address) {
-                    $company_columns .= ", headquarters_address";
-                    $company_values .= ", '" . $full_address . "'";
+                if ($verification_insert != "") {
+                    $errors[] = "Failed to create verification record: " . $verification_insert;
+                    error_log("Verification insert error: " . $verification_insert);
                 }
+            }
 
-                if ($city) {
-                    $company_columns .= ", headquarters_city";
-                    $company_values .= ", '" . $city . "'";
-                }
+            // Only send email if no errors
+            if (empty($errors)) {
+                // Send verification email
+                try {
+                    require_once 'PHPMailer/mailconfig.php';
 
-                if ($state) {
-                    $company_columns .= ", headquarters_state";
-                    $company_values .= ", '" . $state . "'";
-                }
+                    $mail->clearAllRecipients();
+                    $mail->addAddress($email, $first_name . ' ' . $last_name);
+                    $mail->Subject = 'Verify Your Email - Manvue Employer Registration';
 
-                if ($company_website) {
-                    $company_columns .= ", company_website";
-                    $company_values .= ", '" . $company_website . "'";
-                }
+                    $email_message = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Verification</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4; padding: 20px;">
+        <tr>
+            <td align="center">
+                <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #1E4A72 0%, #0D2945 100%); padding: 40px 20px; text-align: center;">
+                            <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">Welcome to Manvue!</h1>
+                            <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 16px;">Employer Registration</p>
+                        </td>
+                    </tr>
 
-                if ($company_size) {
-                    $company_columns .= ", company_size";
-                    $company_values .= ", '" . $company_size . "'";
-                }
+                    <!-- Body -->
+                    <tr>
+                        <td style="padding: 40px 30px;">
+                            <h2 style="color: #333333; margin: 0 0 20px 0; font-size: 24px;">Hi ' . $first_name . ',</h2>
+                            <p style="color: #666666; line-height: 1.6; margin: 0 0 20px 0; font-size: 16px;">
+                                Thank you for registering <strong>' . $company_name . '</strong> on Manvue! To complete your registration and activate your employer account, please verify your email address.
+                            </p>
+                            <p style="color: #666666; line-height: 1.6; margin: 0 0 30px 0; font-size: 16px;">
+                                Your verification code is:
+                            </p>
 
-                if ($company_type) {
-                    $company_columns .= ", company_type";
-                    $company_values .= ", '" . $company_type . "'";
-                }
+                            <!-- Verification Code Box -->
+                            <table width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td align="center" style="padding: 20px; background-color: #f8f9fa; border-radius: 8px; border: 2px dashed #1E4A72;">
+                                        <span style="font-size: 36px; font-weight: bold; color: #1E4A72; letter-spacing: 8px;">' . $verification_code . '</span>
+                                    </td>
+                                </tr>
+                            </table>
 
-                if ($founded_year) {
-                    $company_columns .= ", founded_year";
-                    $company_values .= ", " . $founded_year;
-                }
+                            <p style="color: #999999; line-height: 1.6; margin: 20px 0 0 0; font-size: 14px; text-align: center;">
+                                This code will expire in 15 minutes.
+                            </p>
 
-                if ($company_description) {
-                    $company_columns .= ", company_description";
-                    $company_values .= ", '" . $company_description . "'";
-                }
+                            <div style="margin: 30px 0; padding: 20px; background-color: #e3f2fd; border-left: 4px solid #2196f3; border-radius: 4px;">
+                                <p style="color: #1565c0; margin: 0; font-size: 14px;">
+                                    <strong>Next Steps:</strong> After verification, your company will be reviewed by our admin team for approval. You\'ll receive a notification once approved.
+                                </p>
+                            </div>
 
-                $company_insert = $objgen->ins_Row("companies", $company_columns, $company_values);
+                            <div style="margin: 30px 0; padding: 20px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                                <p style="color: #856404; margin: 0; font-size: 14px;">
+                                    <strong>Security Note:</strong> If you did not create an employer account, please ignore this email.
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
 
-                if ($company_insert != "") {
-                    // Rollback user creation if company creation fails
-                    $objgen->del_Row("users", "user_id=" . $user_id);
-                    $errors[] = "Failed to create company record: " . $company_insert;
-                    error_log("Company insert failed: " . $company_insert);
-                } else {
-                    $company_id = $objgen->get_insetId();
-                    error_log("Company created with ID: " . $company_id);
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #f8f9fa; padding: 30px; text-align: center; border-top: 1px solid #e9ecef;">
+                            <p style="color: #999999; margin: 0 0 10px 0; font-size: 14px;">
+                                Need help? Contact us at <a href="mailto:support@manvue.com" style="color: #1E4A72; text-decoration: none;">support@manvue.com</a>
+                            </p>
+                            <p style="color: #999999; margin: 0; font-size: 12px;">
+                                &copy; ' . date('Y') . ' Manvue. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>';
 
-                    // Create employer preferences
-                    error_log("Creating employer preferences...");
-                    $prefs_insert = $objgen->ins_Row(
-                        "user_preferences",
-                        "user_id, email_notifications, push_notifications, sms_notifications, job_alerts, created_at, updated_at",
-                        "'" . $user_id . "', 1, 1, 0, 1, '" . $c_date . "', '" . $c_date . "'"
-                    );
+                    $mail->msgHTML($email_message);
 
-                    if ($prefs_insert != "") {
-                        error_log("Preferences insert warning: " . $prefs_insert);
+                    if (!$mail->send()) {
+                        error_log("Failed to send verification email: " . $mail->ErrorInfo);
+                        $errors[] = "Failed to send verification email: " . $mail->ErrorInfo;
+                    } else {
+                        error_log("Verification email sent successfully to: " . $email);
                     }
 
-                    error_log("=== EMPLOYER SIGNUP SUCCESS - PENDING VERIFICATION ===");
+                    if (empty($errors)) {
+                        error_log("=== EMPLOYER SIGNUP VERIFICATION EMAIL SENT ===");
 
-                    // Success response
-                    $response_arr = [
-                        "data" => [
-                            "user_id" => $user_id,
-                            "company_id" => $company_id,
-                            "first_name" => $first_name,
-                            "last_name" => $last_name,
-                            "company_name" => $company_name,
-                            "email" => $email,
-                            "phone" => $mobile_number,
-                            "user_status" => "active",
-                            "company_status" => "pending_verification",
-                            "message" => "Registration successful! Your company is pending verification."
-                        ],
-                        "response_code" => 201,
-                        "status" => "Success",
-                        "message" => "Employer registration successful. Company pending verification.",
-                        "success" => true,
-                        "requires_verification" => true
-                    ];
+                        // Success response - NO user data, NO JWT token, just confirmation
+                        $response_arr = [
+                            "data" => [
+                                "email" => $email,
+                                "user_type" => "employer",
+                                "verification_required" => true
+                            ],
+                            "response_code" => 200,
+                            "status" => "Success",
+                            "message" => "Verification code sent successfully! Please check your email to verify your account.",
+                            "success" => true,
+                            "requires_verification" => true
+                        ];
 
-                    $rest->response($api->json($response_arr), 201);
+                        $rest->response($api->json($response_arr), 200);
+                    }
+
+                } catch (Exception $e) {
+                    error_log("Exception while sending email: " . $e->getMessage());
+                    $errors[] = "Failed to send verification email: " . $e->getMessage();
                 }
             }
         }
 
         // If there are errors, return them
         if (!empty($errors)) {
-            error_log("=== EMPLOYER SIGNUP VALIDATION FAILED ===");
+            error_log("=== EMPLOYER SIGNUP FAILED ===");
             error_log("Errors: " . json_encode($errors));
 
             $response_arr = [
@@ -298,4 +356,5 @@ if (isset($authkey) && $authkey == true) {
     $rest->response($api->json($response_arr), 401);
 }
 
+$api->processApi();
 ?>

@@ -104,12 +104,14 @@ if (isset($authkey) && $authkey == true) {
 
                 // Location
                 'headquarters_address' => $objgen->check_tag($company_data['headquarters_address']),
-                'headquarters_city' => $objgen->check_tag($company_data['headquarters_city']),
-                'headquarters_state' => $objgen->check_tag($company_data['headquarters_state']),
+                'location_city' => $objgen->check_tag($user_data['location_city']),
+                'location_state' => $objgen->check_tag($user_data['location_state']),
                 'headquarters_country' => $objgen->check_tag($company_data['headquarters_country']),
-                'headquarters' => $objgen->check_tag($company_data['headquarters_city']) . ', ' .
-                                 $objgen->check_tag($company_data['headquarters_state']) . ', ' .
-                                 $objgen->check_tag($company_data['headquarters_country']),
+                'headquarters' => implode(', ', array_filter([
+                    $objgen->check_tag($user_data['location_city']),
+                    $objgen->check_tag($user_data['location_state']),
+                    $objgen->check_tag($company_data['headquarters_country'])
+                ], function($val) { return !empty($val); })),
 
                 // Status
                 'status' => $objgen->check_tag($company_data['status']),
@@ -121,6 +123,8 @@ if (isset($authkey) && $authkey == true) {
                 'phone' => $objgen->check_tag($user_data['phone']),
                 'first_name' => $objgen->check_tag($user_data['first_name']),
                 'last_name' => $objgen->check_tag($user_data['last_name']),
+                'location_city' => $objgen->check_tag($user_data['location_city']),
+                'location_state' => $objgen->check_tag($user_data['location_state']),
 
                 // Statistics
                 'statistics' => [

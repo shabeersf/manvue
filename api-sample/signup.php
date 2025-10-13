@@ -1,7 +1,8 @@
 <?php
 require_once "includes/includepath.php";
+require_once 'PHPMailer/mailconfig.php';
 
-// JWT Functions
+// JWT Functions (kept for future use in verify-email.php)
 function generate_jwt($headers, $payload, $secret = 'secret')
 {
     $headers_encoded = base64url_encode(json_encode($headers));
@@ -41,11 +42,8 @@ if (isset($authkey) && $authkey == true) {
 
     try {
         // Debug: Log incoming request data
-        error_log("=== SIGNUP REQUEST START ===");
+        error_log("=== SIGNUP REQUEST START (VERIFICATION-FIRST FLOW) ===");
         error_log("POST data: " . json_encode($rest->_request));
-        error_log("FILES data: " . json_encode(array_map(function ($file) {
-            return ['name' => $file['name'], 'size' => $file['size'], 'type' => $file['type']];
-        }, $_FILES)));
 
         // Get request data with null safety
         $user_type = isset($rest->_request['user_type']) ? $objgen->check_input($rest->_request['user_type']) : '';
@@ -173,10 +171,10 @@ if (isset($authkey) && $authkey == true) {
 
         error_log("Initial validation errors: " . json_encode($errors));
 
-        // If validation passed, proceed with registration
+        // If validation passed, proceed with storing signup data temporarily
         if (empty($errors)) {
 
-            // Handle profile image upload
+            // Handle profile image upload (if provided)
             $profile_image = "";
             if (isset($_FILES['profile_image']) && $_FILES['profile_image']['name'] != "") {
                 error_log("Processing profile image upload");
@@ -205,264 +203,216 @@ if (isset($authkey) && $authkey == true) {
             // Only proceed if no image upload errors
             if (empty($errors)) {
 
-                // Insert user
-                error_log("Inserting user record");
-                $user_insert = $objgen->ins_Row(
-                    'users',
-                    'first_name, last_name, email, phone, password, user_type, profile_image, date_of_birth, gender, location_city, location_state, location_country, bio, status, created_at',
-                    "'" . $first_name . "', '" . $last_name . "', '" . $email . "', '" . $phone . "', '" . $objgen->encrypt_pass($password) . "', '" . $user_type . "', '" . $profile_image . "', " . ($date_of_birth ? "'" . $objgen->con_date_db($date_of_birth) . "'" : "NULL") . ", " . ($gender ? "'" . $gender . "'" : "NULL") . ", " . ($location_city ? "'" . $location_city . "'" : "NULL") . ", " . ($location_state ? "'" . $location_state . "'" : "NULL") . ", 'India', " . ($bio ? "'" . $bio . "'" : "NULL") . ", 'inactive', '" . $c_date . "'"
+                // Prepare signup data to store temporarily in email_verifications table
+                $signup_data = [
+                    'user_type' => $user_type,
+                    'first_name' => $first_name,
+                    'last_name' => $last_name,
+                    'email' => $email,
+                    'phone' => $phone,
+                    'password' => $password, // Will be encrypted when creating user
+                    'date_of_birth' => $date_of_birth,
+                    'gender' => $gender,
+                    'location_city' => $location_city,
+                    'location_state' => $location_state,
+                    'bio' => $bio,
+                    'profile_image' => $profile_image
+                ];
+
+                // Add jobseeker-specific data
+                if ($user_type === 'jobseeker') {
+                    $signup_data['jobseeker_data'] = [
+                        'current_job_title' => $current_job_title,
+                        'current_company' => $current_company,
+                        'experience_years' => $experience_years,
+                        'experience_months' => $experience_months,
+                        'current_salary' => $current_salary,
+                        'expected_salary' => $expected_salary,
+                        'notice_period' => $notice_period,
+                        'job_type_preference' => $job_type_preference,
+                        'work_mode_preference' => $work_mode_preference,
+                        'willing_to_relocate' => $willing_to_relocate,
+                        'availability_status' => $availability_status,
+                        'linkedin_url' => $linkedin_url,
+                        'github_url' => $github_url,
+                        'portfolio_url' => $portfolio_url,
+                        'profile_visibility' => $profile_visibility,
+                        'skills' => $skills
+                    ];
+                }
+
+                // Add employer-specific data
+                if ($user_type === 'employer') {
+                    $signup_data['employer_data'] = [
+                        'company_name' => $company_name,
+                        'company_website' => $company_website,
+                        'company_size' => $company_size,
+                        'industry' => $industry,
+                        'company_type' => $company_type,
+                        'company_description' => $company_description,
+                        'founded_year' => $founded_year,
+                        'headquarters_address' => $headquarters_address,
+                        'headquarters_city' => $headquarters_city,
+                        'headquarters_state' => $headquarters_state
+                    ];
+                }
+
+                // Convert signup data to JSON
+                $signup_data_json = json_encode($signup_data);
+                error_log("Signup data prepared, length: " . strlen($signup_data_json) . " bytes");
+
+                // Generate 6-digit verification code
+                $verification_code = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+
+                // Set expiration time (15 minutes from now)
+                $expires_at = date('Y-m-d H:i:s', strtotime('+15 minutes'));
+
+                // Check if there's already a pending verification for this email and user_type
+                $existing_verification = $objgen->get_Onerow(
+                    "email_verifications",
+                    "and email='$email' and user_type='$user_type' and is_verified=0"
                 );
 
-                if ($user_insert != "") {
-                    $errors[] = "User registration failed: " . $user_insert;
-                    error_log("User insert error: " . $user_insert);
+                if ($existing_verification) {
+                    // Update existing verification record
+                    error_log("Updating existing verification record for: $email");
+                    $verification_update = $objgen->upd_Row(
+                        "email_verifications",
+                        "verification_code='$verification_code', expires_at='$expires_at', signup_data='$signup_data_json', created_at='$c_date'",
+                        "verification_id=" . $existing_verification['verification_id']
+                    );
+
+                    if ($verification_update != "") {
+                        $errors[] = "Failed to update verification record: " . $verification_update;
+                        error_log("Verification update error: " . $verification_update);
+                    }
+                } else {
+                    // Insert new verification record with signup data
+                    error_log("Creating new verification record for: $email");
+                    $verification_insert = $objgen->ins_Row(
+                        'email_verifications',
+                        'email, user_type, verification_code, signup_data, expires_at, created_at',
+                        "'$email', '$user_type', '$verification_code', '$signup_data_json', '$expires_at', '$c_date'"
+                    );
+
+                    if ($verification_insert != "") {
+                        $errors[] = "Failed to create verification record: " . $verification_insert;
+                        error_log("Verification insert error: " . $verification_insert);
+                    }
                 }
 
-                // Check for errors before continuing
+                // Only send email if no errors
                 if (empty($errors)) {
-                    $user_id = $objgen->get_insetId();
-                    error_log("User created with ID: " . $user_id);
+                    // Send verification email
+                    try {
+                        require_once 'PHPMailer/mailconfig.php';
 
-                    // Create user preferences
-                    error_log("Creating user preferences");
-                    $preferences_insert = $objgen->ins_Row(
-                        'user_preferences',
-                        'user_id, created_at',
-                        "'" . $user_id . "', '" . $c_date . "'"
-                    );
+                        $mail->clearAllRecipients();
+                        $mail->addAddress($email, $first_name . ' ' . $last_name);
+                        $mail->Subject = 'Verify Your Email - Manvue';
 
-                    if ($preferences_insert != "") {
-                        $errors[] = "User preferences creation failed: " . $preferences_insert;
-                        error_log("Preferences insert error: " . $preferences_insert);
-                    }
-                }
+                        $email_message = '<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Verification</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4; padding: 20px;">
+        <tr>
+            <td align="center">
+                <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #1BA3A3 0%, #0D7A7A 100%); padding: 40px 20px; text-align: center;">
+                            <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">Welcome to Manvue!</h1>
+                        </td>
+                    </tr>
 
-                // Check for errors before continuing with user type specific operations
-                if (empty($errors) && $user_type === 'jobseeker') {
+                    <!-- Body -->
+                    <tr>
+                        <td style="padding: 40px 30px;">
+                            <h2 style="color: #333333; margin: 0 0 20px 0; font-size: 24px;">Hi ' . $first_name . ',</h2>
+                            <p style="color: #666666; line-height: 1.6; margin: 0 0 20px 0; font-size: 16px;">
+                                Thank you for signing up! To complete your registration and activate your account, please verify your email address.
+                            </p>
+                            <p style="color: #666666; line-height: 1.6; margin: 0 0 30px 0; font-size: 16px;">
+                                Your verification code is:
+                            </p>
 
-                    error_log("Creating jobseeker profile");
+                            <!-- Verification Code Box -->
+                            <table width="100%" cellpadding="0" cellspacing="0">
+                                <tr>
+                                    <td align="center" style="padding: 20px; background-color: #f8f9fa; border-radius: 8px; border: 2px dashed #1BA3A3;">
+                                        <span style="font-size: 36px; font-weight: bold; color: #1BA3A3; letter-spacing: 8px;">' . $verification_code . '</span>
+                                    </td>
+                                </tr>
+                            </table>
 
-                    // Handle SET data types
-                    $job_type_pref_str = is_array($job_type_preference) ? implode(',', $job_type_preference) : $job_type_preference;
-                    $work_mode_pref_str = is_array($work_mode_preference) ? implode(',', $work_mode_preference) : $work_mode_preference;
+                            <p style="color: #999999; line-height: 1.6; margin: 20px 0 0 0; font-size: 14px; text-align: center;">
+                                This code will expire in 15 minutes.
+                            </p>
 
-                    error_log("Job type pref: " . $job_type_pref_str);
-                    error_log("Work mode pref: " . $work_mode_pref_str);
+                            <div style="margin: 30px 0; padding: 20px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                                <p style="color: #856404; margin: 0; font-size: 14px;">
+                                    <strong>Security Note:</strong> If you did not create an account, please ignore this email.
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
 
-                    // Create user profile
-                    $profile_insert = $objgen->ins_Row(
-                        'user_profiles',
-                        'user_id, current_job_title, current_company, experience_years, experience_months, current_salary, expected_salary, notice_period, job_type_preference, work_mode_preference, willing_to_relocate, linkedin_url, github_url, portfolio_url, availability_status, profile_visibility, profile_completeness, created_at',
-                        "'" . $user_id . "', " .
-                            ($current_job_title ? "'" . $current_job_title . "'" : "NULL") . ", " .
-                            ($current_company ? "'" . $current_company . "'" : "NULL") . ", " .
-                            "'" . $experience_years . "', '" . $experience_months . "', " .
-                            ($current_salary ? "'" . $current_salary . "'" : "NULL") . ", " .
-                            ($expected_salary ? "'" . $expected_salary . "'" : "NULL") . ", " .
-                            "'" . $notice_period . "', '" . $job_type_pref_str . "', '" . $work_mode_pref_str . "', " .
-                            "'" . $willing_to_relocate . "', " .
-                            ($linkedin_url ? "'" . $linkedin_url . "'" : "NULL") . ", " .
-                            ($github_url ? "'" . $github_url . "'" : "NULL") . ", " .
-                            ($portfolio_url ? "'" . $portfolio_url . "'" : "NULL") . ", " .
-                            "'" . $availability_status . "', '" . $profile_visibility . "', 0, '" . $c_date . "'"
-                    );
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #f8f9fa; padding: 30px; text-align: center; border-top: 1px solid #e9ecef;">
+                            <p style="color: #999999; margin: 0 0 10px 0; font-size: 14px;">
+                                Need help? Contact us at <a href="mailto:support@manvue.com" style="color: #1BA3A3; text-decoration: none;">support@manvue.com</a>
+                            </p>
+                            <p style="color: #999999; margin: 0; font-size: 12px;">
+                                &copy; ' . date('Y') . ' Manvue. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>';
 
-                    if ($profile_insert != "") {
-                        $errors[] = "Profile creation failed: " . $profile_insert;
-                        error_log("Profile insert error: " . $profile_insert);
-                    }
+                        $mail->msgHTML($email_message);
 
-                    // Add skills only if no errors so far
-                    if (empty($errors) && !empty($skills) && is_array($skills)) {
-                        error_log("Processing " . count($skills) . " skills");
-
-                        foreach ($skills as $index => $skill_data) {
-                            if (is_array($skill_data) && isset($skill_data['skill_name'])) {
-                                $skill_name = $objgen->check_input($skill_data['skill_name']);
-                                $proficiency = isset($skill_data['proficiency']) ? $objgen->check_input($skill_data['proficiency']) : 'intermediate';
-                                $years_exp = isset($skill_data['years_of_experience']) ? (float)$skill_data['years_of_experience'] : 0.0;
-
-                                error_log("Processing skill $index: $skill_name, $proficiency, $years_exp years");
-
-                                // Validate proficiency
-                                $valid_proficiency = ['beginner', 'intermediate', 'advanced', 'expert'];
-                                if (!in_array($proficiency, $valid_proficiency)) {
-                                    $errors[] = "Invalid proficiency level for skill: " . $skill_name;
-                                    error_log("Invalid proficiency: $proficiency for skill: $skill_name");
-                                    break;
-                                }
-
-                                // Validate years
-                                if ($years_exp < 0 || $years_exp > 99.9) {
-                                    $errors[] = "Invalid years of experience for skill: " . $skill_name;
-                                    error_log("Invalid years: $years_exp for skill: $skill_name");
-                                    break;
-                                }
-
-                                // Check if skill exists
-                                $skill_exists = $objgen->get_Onerow("skills", "and skill_name='" . $skill_name . "'");
-
-                                if (!$skill_exists || !isset($skill_exists['skill_id'])) {
-                                    // Create new skill
-                                    error_log("Creating new skill: $skill_name");
-                                    $skill_insert = $objgen->ins_Row(
-                                        'skills',
-                                        'skill_name, created_at',
-                                        "'" . $skill_name . "', '" . $c_date . "'"
-                                    );
-
-                                    if ($skill_insert != "") {
-                                        $errors[] = "Skill creation failed: " . $skill_insert;
-                                        error_log("Skill insert error: " . $skill_insert);
-                                        break;
-                                    }
-
-                                    $skill_id = $objgen->get_insetId();
-                                    error_log("New skill created with ID: $skill_id");
-                                } else {
-                                    $skill_id = $skill_exists['skill_id'];
-                                    error_log("Using existing skill ID: $skill_id");
-                                }
-
-                                // Add user skill
-                                $years_exp_formatted = number_format($years_exp, 1, '.', '');
-                                error_log("Inserting user skill with years: $years_exp_formatted");
-
-                                $user_skill_insert = $objgen->ins_Row(
-                                    'user_skills',
-                                    'user_id, skill_id, proficiency_level, years_of_experience, added_at',
-                                    "'" . $user_id . "', '" . $skill_id . "', '" . $proficiency . "', " . $years_exp_formatted . ", '" . $c_date . "'"
-                                );
-
-                                if ($user_skill_insert != "") {
-                                    $errors[] = "User skill assignment failed: " . $user_skill_insert;
-                                    error_log("User skill insert error: " . $user_skill_insert);
-                                    break;
-                                }
-
-                                error_log("Skill added successfully");
-                            }
+                        if (!$mail->send()) {
+                            error_log("Failed to send verification email: " . $mail->ErrorInfo);
+                            $errors[] = "Failed to send verification email: " . $mail->ErrorInfo;
+                        } else {
+                            error_log("Verification email sent successfully to: " . $email);
                         }
-                    }
-                } elseif (empty($errors) && $user_type === 'employer') {
 
-                    error_log("Creating employer company");
+                        if (empty($errors)) {
+                            error_log("=== SIGNUP VERIFICATION EMAIL SENT ===");
 
-                    // Create company
-                    $company_insert = $objgen->ins_Row(
-                        'companies',
-                        'user_id, company_name, company_website, company_size, industry, company_type, company_description, founded_year, headquarters_address, headquarters_city, headquarters_state, status, created_at',
-                        "'" . $user_id . "', '" . $company_name . "', " .
-                            ($company_website ? "'" . $company_website . "'" : "NULL") . ", " .
-                            ($company_size ? "'" . $company_size . "'" : "NULL") . ", " .
-                            "'" . $industry . "', '" . $company_type . "', " .
-                            ($company_description ? "'" . $company_description . "'" : "NULL") . ", " .
-                            ($founded_year ? $founded_year : "NULL") . ", " .
-                            ($headquarters_address ? "'" . $headquarters_address . "'" : "NULL") . ", " .
-                            ($headquarters_city ? "'" . $headquarters_city . "'" : "NULL") . ", " .
-                            ($headquarters_state ? "'" . $headquarters_state . "'" : "NULL") . ", " .
-                            "'pending_verification', '" . $c_date . "'"
-                    );
-
-                    if ($company_insert != "") {
-                        $errors[] = "Company creation failed: " . $company_insert;
-                        error_log("Company insert error: " . $company_insert);
-                    }
-                }
-
-                // If everything succeeded, prepare success response
-                if (empty($errors)) {
-                    error_log("Registration successful, preparing response");
-
-                    // Get user data
-                    $user_details = $objgen->get_Onerow("users", "and user_id=" . $user_id);
-
-                    $data = [
-                        'user_id' => $user_details['user_id'],
-                        'first_name' => $objgen->check_tag($user_details['first_name']),
-                        'last_name' => $objgen->check_tag($user_details['last_name']),
-                        'email' => $objgen->check_tag($user_details['email']),
-                        'phone' => $objgen->check_tag($user_details['phone']),
-                        'user_type' => $objgen->check_tag($user_details['user_type']),
-                        'profile_image' => $user_details['profile_image'] ? IMAGE_PATH . "medium/" . $user_details['profile_image'] : "",
-                        'status' => $objgen->check_tag($user_details['status']),
-                        'created_at' => date('d-m-Y H:i:s', strtotime($user_details['created_at']))
-                    ];
-
-                    // Add profile data for jobseekers
-                    if ($user_type === 'jobseeker') {
-                        $profile_details = $objgen->get_Onerow("user_profiles", "and user_id=" . $user_id);
-                        if ($profile_details) {
-                            $data['profile'] = [
-                                'current_job_title' => $objgen->check_tag($profile_details['current_job_title']),
-                                'experience_years' => (int)$profile_details['experience_years'],
-                                'experience_months' => (int)$profile_details['experience_months'],
-                                'availability_status' => $objgen->check_tag($profile_details['availability_status'])
+                            // Success response - NO JWT token, NO user data, just confirmation
+                            $response_arr = [
+                                "data" => [
+                                    "email" => $email,
+                                    "user_type" => $user_type,
+                                    "verification_required" => true
+                                ],
+                                "response_code" => 200,
+                                "status" => "Success",
+                                "message" => "Verification code sent successfully! Please check your email to verify your account.",
+                                "success" => true,
+                                "requires_verification" => true
                             ];
+
+                            $rest->response($api->json($response_arr), 200);
                         }
 
-                        // Get skills - CORRECTED VERSION
-                        $sql = "SELECT s.skill_name, us.proficiency_level, us.years_of_experience 
-            FROM user_skills us 
-            JOIN skills s ON us.skill_id = s.skill_id 
-            WHERE us.user_id=" . $user_id . " 
-            ORDER BY us.added_at DESC 
-            LIMIT 50";
-                        $user_skills = $objgen->get_AllRows_qry($sql);
-
-                        $data['skills'] = $user_skills ? $user_skills : [];
+                    } catch (Exception $e) {
+                        error_log("Exception while sending email: " . $e->getMessage());
+                        $errors[] = "Failed to send verification email: " . $e->getMessage();
                     }
-
-                    // Add company data for employers
-                    if ($user_type === 'employer') {
-                        $company_details = $objgen->get_Onerow("companies", "and user_id=" . $user_id);
-                        if ($company_details) {
-                            $data['company'] = [
-                                'company_id' => $company_details['company_id'],
-                                'company_name' => $objgen->check_tag($company_details['company_name']),
-                                'industry' => $objgen->check_tag($company_details['industry']),
-                                'status' => $objgen->check_tag($company_details['status'])
-                            ];
-                        }
-                    }
-
-                    // Generate JWT
-                    $jwt_headers = ['typ' => 'JWT', 'alg' => 'HS256'];
-                    $jwt_payload = [
-                        'user_id' => $user_id,
-                        'email' => $email,
-                        'user_type' => $user_type,
-                        'iat' => time(),
-                        'exp' => time() + (24 * 60 * 60)
-                    ];
-                    $jwt_secret = 'manvue_secret_key_2025';
-                    $jwt_token = generate_jwt($jwt_headers, $jwt_payload, $jwt_secret);
-
-                    // Send notification
-                    $welcome_title = $user_type === 'jobseeker' ? 'Welcome to Manvue!' : 'Welcome to Manvue Employer Portal!';
-                    $welcome_message = $user_type === 'jobseeker'
-                        ? 'Your job seeker account has been created successfully!'
-                        : 'Your employer account has been created successfully!';
-
-                    $objgen->ins_Row(
-                        'notifications',
-                        'user_id, notification_type, title, message, priority, created_at',
-                        "'" . $user_id . "', 'system', '" . $welcome_title . "', '" . $welcome_message . "', 'medium', '" . $c_date . "'"
-                    );
-
-                    error_log("=== SIGNUP SUCCESS ===");
-                    $data['user_id'] = $user_id;
-                    // Success response
-                    $response_arr = [
-                        "data" => $data,
-                        "jwt_token" => $jwt_token,
-                        "response_code" => 201,
-                        "status" => "Success",
-                        "message" => "Account created successfully",
-                        "success" => true
-                    ];
-
-                    $rest->response($api->json($response_arr), 201);
                 }
             }
         }

@@ -1,10 +1,11 @@
 import CompanyEditModal from '@/components/CompanyEditModal';
+import CustomDropdown from '@/components/CustomDropdown';
 import apiService from '@/services/apiService';
 import theme from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
-import * as SecureStore from 'expo-secure-store';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -29,10 +30,51 @@ export default function CompanyProfile() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState('');
+  const [updateSuccess, setUpdateSuccess] = useState('');
 
   // User credentials
   const [userId, setUserId] = useState(null);
   const [companyId, setCompanyId] = useState(null);
+
+  // Dropdown Options (same as employer-signup)
+  const genderOptions = [
+    { label: "Male", value: "male" },
+    { label: "Female", value: "female" },
+    { label: "Other", value: "other" },
+    { label: "Prefer not to say", value: "prefer_not_to_say" },
+  ];
+
+  const companySizeOptions = [
+    { label: "1-10 employees", value: "1-10" },
+    { label: "11-50 employees", value: "11-50" },
+    { label: "51-200 employees", value: "51-200" },
+    { label: "201-500 employees", value: "201-500" },
+    { label: "501-1000 employees", value: "501-1000" },
+    { label: "1000+ employees", value: "1000+" },
+  ];
+
+  const companyTypeOptions = [
+    { label: "Startup", value: "startup" },
+    { label: "Corporate", value: "corporate" },
+    { label: "Government", value: "government" },
+    { label: "Non-Profit", value: "non_profit" },
+    { label: "Freelance", value: "freelance" },
+  ];
+
+  const industryOptions = [
+    { label: "Information Technology", value: "Information Technology" },
+    { label: "Healthcare", value: "Healthcare" },
+    { label: "Finance & Banking", value: "Finance & Banking" },
+    { label: "Education", value: "Education" },
+    { label: "Manufacturing", value: "Manufacturing" },
+    { label: "Retail & E-commerce", value: "Retail & E-commerce" },
+    { label: "Construction", value: "Construction" },
+    { label: "Hospitality", value: "Hospitality" },
+    { label: "Media & Entertainment", value: "Media & Entertainment" },
+    { label: "Government", value: "Government" },
+    { label: "Other", value: "Other" },
+  ];
 
   // Company profile data
   const [companyProfile, setCompanyProfile] = useState({
@@ -40,11 +82,19 @@ export default function CompanyProfile() {
     companyName: '',
     industry: '',
     companySize: '',
+    companyType: '',
     foundedYear: '',
     website: '',
+    gst_number: '',
+    gstVerified: false,
+    location_city: '',
+    location_state: '',
     headquarters: '',
 
-    // Contact Info
+    // Contact Person Info
+    firstName: '',
+    lastName: '',
+    gender: '',
     email: '',
     phone: '',
     address: '',
@@ -117,11 +167,19 @@ export default function CompanyProfile() {
           companyName: data.company_name || '',
           industry: data.industry || '',
           companySize: data.company_size || '',
+          companyType: data.company_type || '',
           foundedYear: data.founded_year ? data.founded_year.toString() : '',
           website: data.company_website || '',
+          gst_number: data.gst_number || '',
+          gstVerified: data.gst_verified || false,
+          location_city: data.location_city || '',
+          location_state: data.location_state || '',
           headquarters: data.headquarters || '',
 
-          // Contact Info
+          // Contact Person Info
+          firstName: data.first_name || '',
+          lastName: data.last_name || '',
+          // gender: data.gender || '',
           email: data.email || '',
           phone: data.phone || '',
           address: data.headquarters_address || '',
@@ -170,8 +228,8 @@ export default function CompanyProfile() {
     setShowEditModal(true);
   };
 
-  const handleSaveField = async (value) => {
-    if (!value.trim()) {
+  const handleSaveField = async (value, fieldName = editingField) => {
+    if (!value || !value.toString().trim()) {
       Alert.alert('Error', 'Value cannot be empty');
       return;
     }
@@ -182,15 +240,15 @@ export default function CompanyProfile() {
       const response = await apiService.updateCompanyField(
         companyId,
         userId,
-        editingField,
-        value.trim()
+        fieldName,
+        value.toString().trim()
       );
 
       if (response.success) {
         // Update local state
         setCompanyProfile(prev => ({
           ...prev,
-          [editingField]: value.trim()
+          [fieldName]: value.toString().trim()
         }));
 
         Alert.alert('Success', response.message || 'Company profile updated successfully');
@@ -417,6 +475,17 @@ export default function CompanyProfile() {
     </View>
   );
 
+  // Helper function to get icon for field
+  const getIconForField = (field) => {
+    const iconMap = {
+      gender: 'person-outline',
+      industry: 'business-outline',
+      companySize: 'people-outline',
+      companyType: 'business-outline',
+    };
+    return iconMap[field] || 'list-outline';
+  };
+
   // Section Component
   const Section = ({ title, children, icon }) => (
     <View
@@ -460,60 +529,87 @@ export default function CompanyProfile() {
   );
 
   // Field Item Component
-  const FieldItem = ({ label, value, field, editable = true }) => (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        paddingVertical: theme.spacing.sm,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border.light,
-        minHeight: 50,
-      }}
-    >
-      <View style={{ flex: 1, marginRight: theme.spacing.md }}>
-        <Text
+  const FieldItem = ({ label, value, field, editable = true, fieldType = 'text', options = [] }) => {
+    // If it's a dropdown field, use CustomDropdown
+    if (fieldType === 'dropdown') {
+      return (
+        <View
           style={{
-            fontSize: theme.typography.sizes.sm,
-            fontFamily: theme.typography.fonts.medium,
-            color: theme.colors.text.secondary,
-            marginBottom: theme.spacing.xs,
+            paddingVertical: theme.spacing.sm,
+            borderBottomWidth: 1,
+            borderBottomColor: theme.colors.border.light,
+            minHeight: 50,
           }}
         >
-          {label}
-        </Text>
-        <Text
-          style={{
-            fontSize: theme.typography.sizes.base,
-            fontFamily: theme.typography.fonts.regular,
-            color: theme.colors.text.primary,
-            lineHeight: theme.typography.sizes.base * 1.3,
-          }}
-        >
-          {value || 'Not provided'}
-        </Text>
-      </View>
-
-      {editable && (
-        <TouchableOpacity
-          onPress={() => handleEditField(field, value)}
-          style={{
-            padding: theme.spacing.sm,
-            borderRadius: theme.borderRadius.sm,
-            backgroundColor: theme.colors.background.accent,
-          }}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name="create-outline"
-            size={16}
-            color={theme.colors.primary.teal}
+          <CustomDropdown
+            label={label}
+            value={value}
+            onSelect={(selectedValue) => handleSaveField(selectedValue, field)}
+            options={options}
+            placeholder={`Select ${label.toLowerCase()}`}
+            icon={getIconForField(field)}
+            disabled={!editable}
           />
-        </TouchableOpacity>
-      )}
-    </View>
-  );
+        </View>
+      );
+    }
+
+    // Original text field rendering
+    return (
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          paddingVertical: theme.spacing.sm,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.colors.border.light,
+          minHeight: 50,
+        }}
+      >
+        <View style={{ flex: 1, marginRight: theme.spacing.md }}>
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.sm,
+              fontFamily: theme.typography.fonts.medium,
+              color: theme.colors.text.secondary,
+              marginBottom: theme.spacing.xs,
+            }}
+          >
+            {label}
+          </Text>
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.base,
+              fontFamily: theme.typography.fonts.regular,
+              color: theme.colors.text.primary,
+              lineHeight: theme.typography.sizes.base * 1.3,
+            }}
+          >
+            {value || 'Not provided'}
+          </Text>
+        </View>
+
+        {editable && (
+          <TouchableOpacity
+            onPress={() => handleEditField(field, value)}
+            style={{
+              padding: theme.spacing.sm,
+              borderRadius: theme.borderRadius.sm,
+              backgroundColor: theme.colors.background.accent,
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="create-outline"
+              size={16}
+              color={theme.colors.primary.teal}
+            />
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
 
   // Logout Modal
   const LogoutModal = () => (
@@ -694,11 +790,22 @@ export default function CompanyProfile() {
             label="Industry"
             value={companyProfile.industry}
             field="industry"
+            fieldType="dropdown"
+            options={industryOptions}
+          />
+          <FieldItem
+            label="Company Type"
+            value={companyProfile.companyType}
+            field="companyType"
+            fieldType="dropdown"
+            options={companyTypeOptions}
           />
           <FieldItem
             label="Company Size"
             value={companyProfile.companySize}
             field="companySize"
+            fieldType="dropdown"
+            options={companySizeOptions}
           />
           <FieldItem
             label="Founded Year"
@@ -710,15 +817,117 @@ export default function CompanyProfile() {
             value={companyProfile.website}
             field="website"
           />
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              paddingVertical: theme.spacing.sm,
+              borderBottomWidth: 1,
+              borderBottomColor: theme.colors.border.light,
+              minHeight: 50,
+            }}
+          >
+            <View style={{ flex: 1, marginRight: theme.spacing.md }}>
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: theme.colors.text.secondary,
+                  marginBottom: theme.spacing.xs,
+                }}
+              >
+                GST Number
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.base,
+                    fontFamily: theme.typography.fonts.regular,
+                    color: theme.colors.text.primary,
+                    lineHeight: theme.typography.sizes.base * 1.3,
+                    marginRight: theme.spacing.sm,
+                  }}
+                >
+                  {companyProfile.gst_number || 'Not provided'}
+                </Text>
+                {companyProfile.gstVerified && (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: theme.colors.status.success,
+                      paddingHorizontal: theme.spacing.xs,
+                      paddingVertical: 2,
+                      borderRadius: theme.borderRadius.sm,
+                    }}
+                  >
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={12}
+                      color={theme.colors.neutral.white}
+                      style={{ marginRight: 2 }}
+                    />
+                    <Text
+                      style={{
+                        fontSize: theme.typography.sizes.xs,
+                        fontFamily: theme.typography.fonts.medium,
+                        color: theme.colors.neutral.white,
+                      }}
+                    >
+                      Verified
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={() => handleEditField('gst_number', companyProfile.gst_number)}
+              style={{
+                padding: theme.spacing.sm,
+                borderRadius: theme.borderRadius.sm,
+                backgroundColor: theme.colors.background.accent,
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="create-outline"
+                size={16}
+                color={theme.colors.primary.teal}
+              />
+            </TouchableOpacity>
+          </View>
           <FieldItem
-            label="Headquarters"
-            value={companyProfile.headquarters}
-            field="headquarters"
+            label="City"
+            value={companyProfile.location_city}
+            field="location_city"
+          />
+          <FieldItem
+            label="State"
+            value={companyProfile.location_state}
+            field="location_state"
           />
         </Section>
 
-        {/* Contact Information */}
-        <Section title="Contact Information" icon="call-outline">
+        {/* Contact Person Information */}
+        <Section title="Contact Person" icon="person-outline">
+          <FieldItem
+            label="First Name"
+            value={companyProfile.firstName}
+            field="firstName"
+          />
+          <FieldItem
+            label="Last Name"
+            value={companyProfile.lastName}
+            field="lastName"
+          />
+        {/*    <FieldItem
+            label="Gender"
+            value={companyProfile.gender}
+            field="gender"
+            fieldType="dropdown"
+            options={genderOptions}
+          /> */}
           <FieldItem
             label="Email Address"
             value={companyProfile.email}
@@ -729,8 +938,12 @@ export default function CompanyProfile() {
             value={companyProfile.phone}
             field="phone"
           />
+        </Section>
+
+        {/* Company Address */}
+        <Section title="Company Address" icon="location-outline">
           <FieldItem
-            label="Address"
+            label="Full Address"
             value={companyProfile.address}
             field="address"
           />
@@ -745,21 +958,7 @@ export default function CompanyProfile() {
           />
         </Section>
 
-        {/* Account Information */}
-        <Section title="Account Information" icon="settings-outline">
-          <FieldItem
-            label="Account Status"
-            value={companyProfile.accountStatus}
-            field="accountStatus"
-            editable={false}
-          />
-          <FieldItem
-            label="Member Since"
-            value={companyProfile.joinDate}
-            field="joinDate"
-            editable={false}
-          />
-        </Section>
+      
 
         {/* Account Actions */}
         <Section title="Account Actions" icon="cog-outline">

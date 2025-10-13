@@ -54,31 +54,46 @@ if (isset($authkey) && $authkey == true) {
             }
         }
 
+        // Get user data for validation
+        if (empty($errors)) {
+            $user_check = $objgen->get_Onerow('users', 'and user_id=' . $user_id);
+            if ($user_check) {
+                $user_type = $user_check['user_type'];
+                error_log('User type: ' . $user_type);
+            } else {
+                $errors[] = 'Invalid user or user account is not active';
+            }
+        }
+
         if (empty($errors)) {
 
             // Process field value based on field type
             $processed_value = trim($objgen->check_input($field_value));
 
-            // Map frontend field names to database columns
+            // Map frontend field names to database columns and their target table
             $field_mapping = [
-                'companyName' => 'company_name',
-                'industry' => 'industry',
-                'companySize' => 'company_size',
-                'foundedYear' => 'founded_year',
-                'website' => 'company_website',
-                'headquarters' => 'headquarters_city', // Will handle specially
-                'email' => 'email', // User table field
-                'phone' => 'phone', // User table field
-                'address' => 'headquarters_address',
-                'description' => 'company_description',
-                'mission' => 'company_description', // Extended description
-                'vision' => 'company_description', // Extended description
-                'values' => 'company_description', // Extended description
-                'workCulture' => 'company_description', // Extended description
-                'linkedin' => 'linkedin_url',
-                'twitter' => 'twitter_url',
-                'facebook' => 'facebook_url',
-                'gstNumber' => 'gst_number',
+                // Company table fields
+                'companyName' => ['table' => 'companies', 'column' => 'company_name'],
+                'industry' => ['table' => 'companies', 'column' => 'industry'],
+                'companySize' => ['table' => 'companies', 'column' => 'company_size'],
+                'companyType' => ['table' => 'companies', 'column' => 'company_type'],
+                'foundedYear' => ['table' => 'companies', 'column' => 'founded_year'],
+                'website' => ['table' => 'companies', 'column' => 'company_website'],
+                'gst_number' => ['table' => 'companies', 'column' => 'gst_number'],
+                'address' => ['table' => 'companies', 'column' => 'headquarters_address'],
+                'description' => ['table' => 'companies', 'column' => 'company_description'],
+                'linkedin' => ['table' => 'companies', 'column' => 'linkedin_url'],
+                'twitter' => ['table' => 'companies', 'column' => 'twitter_url'],
+                'facebook' => ['table' => 'companies', 'column' => 'facebook_url'],
+                // User table fields (contact person)
+                'firstName' => ['table' => 'users', 'column' => 'first_name'],
+                'lastName' => ['table' => 'users', 'column' => 'last_name'],
+                'gender' => ['table' => 'users', 'column' => 'gender'],
+                'email' => ['table' => 'users', 'column' => 'email'],
+                'phone' => ['table' => 'users', 'column' => 'phone'],
+                // Location fields - stored in users table
+                'location_city' => ['table' => 'users', 'column' => 'location_city'],
+                'location_state' => ['table' => 'users', 'column' => 'location_state'],
             ];
 
             // Check if field is allowed to be updated
@@ -93,110 +108,101 @@ if (isset($authkey) && $authkey == true) {
         // If validation passed, proceed with update
         if (empty($errors)) {
 
-            $db_field = $field_mapping[$field_name];
+            $field_info = $field_mapping[$field_name];
+            $target_table = $field_info['table'];
+            $db_column = $field_info['column'];
             $update_success = false;
 
-            // Handle user table fields (email, phone)
-            if ($field_name === 'email' || $field_name === 'phone') {
+            error_log("Updating $target_table.$db_column with value: $processed_value");
 
-                error_log("Updating user table field: $db_field");
-
-                // Additional validation for email and phone
-                if ($field_name === 'email') {
-                    if (!filter_var($processed_value, FILTER_VALIDATE_EMAIL)) {
-                        $errors[] = "Invalid email format";
-                    } else {
-                        // Check for duplicate email
-                        $existing_email = $objgen->chk_Ext("users", "email='$processed_value' AND user_id != $user_id");
-                        if ($existing_email > 0) {
-                            $errors[] = "Email already exists";
-                        }
+            // Additional validations based on field
+            if ($field_name === 'email') {
+                if (!filter_var($processed_value, FILTER_VALIDATE_EMAIL)) {
+                    $errors[] = "Invalid email format";
+                } else {
+                    // Check for duplicate email in any user account
+                    $existing_email = $objgen->chk_Ext("users", "email='$processed_value' AND user_id != $user_id");
+                    if ($existing_email > 0) {
+                        $errors[] = "This email is already registered";
                     }
                 }
+            }
 
-                if ($field_name === 'phone') {
-                    if (!preg_match('/^[0-9]{10}$/', $processed_value)) {
-                        $errors[] = "Phone number must be 10 digits";
-                    } else {
-                        // Check for duplicate phone
-                        $existing_phone = $objgen->chk_Ext("users", "phone='$processed_value' AND user_id != $user_id");
-                        if ($existing_phone > 0) {
-                            $errors[] = "Phone number already exists";
-                        }
+            if ($field_name === 'phone') {
+                if (!preg_match('/^[0-9]{10}$/', $processed_value)) {
+                    $errors[] = "Phone number must be 10 digits";
+                } else {
+                    // Check for duplicate phone in any user account
+                    $existing_phone = $objgen->chk_Ext("users", "phone='$processed_value' AND user_id != $user_id");
+                    if ($existing_phone > 0) {
+                        $errors[] = "This mobile number is already registered";
                     }
                 }
+            }
 
-                if (empty($errors)) {
-                    // Update user table
-                    $update_result = $objgen->upd_Row(
-                        "users",
-                        $db_field . "='" . $processed_value . "', updated_at='" . $c_date . "'",
-                        "user_id=" . $user_id
-                    );
-
-                    if ($update_result === "") {
-                        $update_success = true;
-                        error_log("User field updated successfully");
-                    } else {
-                        $errors[] = "Failed to update user data: " . $update_result;
-                        error_log("User update error: " . $update_result);
-                    }
+            // Validation for firstName, lastName
+            if ($field_name === 'firstName' || $field_name === 'lastName') {
+                if (empty($processed_value)) {
+                    $errors[] = ucfirst($field_name) . " cannot be empty";
                 }
+            }
 
-            } else {
-                // Handle company table fields
-
-                error_log("Updating company table field: $db_field");
-
-                // Special handling for founded_year (integer)
-                if ($field_name === 'foundedYear') {
-                    $processed_value = (int)$processed_value;
-                    if ($processed_value < 1800 || $processed_value > date('Y')) {
-                        $errors[] = "Invalid founded year";
-                    }
+            // Validation for gender
+            if ($field_name === 'gender') {
+                $valid_genders = ['male', 'female', 'other', 'prefer_not_to_say'];
+                if (!in_array(strtolower($processed_value), $valid_genders)) {
+                    $errors[] = "Invalid gender value";
                 }
+            }
 
-                // Special handling for headquarters (split into city, state, country)
-                if ($field_name === 'headquarters') {
-                    $parts = explode(',', $processed_value);
-                    if (count($parts) >= 2) {
-                        $city = trim($parts[0]);
-                        $state = trim($parts[1]);
-                        $country = isset($parts[2]) ? trim($parts[2]) : 'India';
+            // Special handling for founded_year (integer)
+            if ($field_name === 'foundedYear') {
+                $processed_value = (int)$processed_value;
+                if ($processed_value < 1800 || $processed_value > date('Y')) {
+                    $errors[] = "Invalid founded year";
+                }
+            }
 
+            // Perform update if no validation errors
+            if (empty($errors)) {
+                if ($target_table === 'users') {
+                    // Update users table
+                    if ($field_name === 'foundedYear') {
                         $update_result = $objgen->upd_Row(
-                            "companies",
-                            "headquarters_city='" . $city . "', headquarters_state='" . $state . "', headquarters_country='" . $country . "', updated_at='" . $c_date . "'",
-                            "company_id=" . $company_id
+                            "users",
+                            $db_column . "=" . $processed_value . ", updated_at='" . $c_date . "'",
+                            "user_id=" . $user_id
                         );
                     } else {
-                        $errors[] = "Invalid headquarters format. Use: City, State, Country";
+                        $update_result = $objgen->upd_Row(
+                            "users",
+                            $db_column . "='" . $processed_value . "', updated_at='" . $c_date . "'",
+                            "user_id=" . $user_id
+                        );
                     }
-                } else if (empty($errors)) {
-                    // Standard company field update
+                } else {
+                    // Update companies table
                     if ($field_name === 'foundedYear') {
                         $update_result = $objgen->upd_Row(
                             "companies",
-                            $db_field . "=" . $processed_value . ", updated_at='" . $c_date . "'",
+                            $db_column . "=" . $processed_value . ", updated_at='" . $c_date . "'",
                             "company_id=" . $company_id
                         );
                     } else {
                         $update_result = $objgen->upd_Row(
                             "companies",
-                            $db_field . "='" . $processed_value . "', updated_at='" . $c_date . "'",
+                            $db_column . "='" . $processed_value . "', updated_at='" . $c_date . "'",
                             "company_id=" . $company_id
                         );
                     }
                 }
 
-                if (empty($errors)) {
-                    if ($update_result === "") {
-                        $update_success = true;
-                        error_log("Company field updated successfully");
-                    } else {
-                        $errors[] = "Failed to update company data: " . $update_result;
-                        error_log("Company update error: " . $update_result);
-                    }
+                if ($update_result === "") {
+                    $update_success = true;
+                    error_log("Field updated successfully in $target_table table");
+                } else {
+                    $errors[] = "Failed to update data: " . $update_result;
+                    error_log("Update error: " . $update_result);
                 }
             }
 
@@ -215,6 +221,8 @@ if (isset($authkey) && $authkey == true) {
                     'company_name' => $objgen->check_tag($updated_company['company_name']),
                     'email' => $objgen->check_tag($updated_user['email']),
                     'phone' => $objgen->check_tag($updated_user['phone']),
+                    'location_city' => $objgen->check_tag($updated_user['location_city']),
+                    'location_state' => $objgen->check_tag($updated_user['location_state']),
                 ];
 
                 error_log("=== UPDATE COMPANY SUCCESS ===");

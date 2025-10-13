@@ -122,13 +122,8 @@ export default function EmployerLogin() {
       });
 
       if (response.success) {
-        // Check if company is pending verification
-        if (response.data.company && response.data.company.status === 'pending_verification') {
-          setLoginError('Your company is pending verification. You will be notified once your company is verified.');
-        } else {
-          // Navigate to employer home screen
-          router.replace('/employer/home');
-        }
+       
+        router.replace('/employer/home');
       } else {
         // Handle login failure - display exact errors from API
         if (response.errors && Array.isArray(response.errors) && response.errors.length > 0) {
@@ -149,7 +144,7 @@ export default function EmployerLogin() {
   };
 
   const handleForgotPassword = () => {
-    router.push('/forgot-password');
+    router.push('/forgot-password?type=employer');
   };
 
   const handleSignUp = () => {

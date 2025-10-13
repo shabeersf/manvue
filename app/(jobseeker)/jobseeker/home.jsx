@@ -137,28 +137,27 @@ export default function JobSeekerHome() {
     setRefreshing(false);
   };
 
-  // Stats Cards Component
+  // Stats Cards Component - Optimized for small screens
   const StatsCards = () => (
     <View
       style={{
         flexDirection: 'row',
         paddingHorizontal: theme.spacing.lg,
         paddingVertical: theme.spacing.md,
-        gap: theme.spacing.md,
-        justifyContent: 'space-between',
+        gap: theme.spacing.sm,
       }}
     >
       {/* Profile Card */}
       <View
         style={{
           flex: 1,
-          aspectRatio: 1,
           backgroundColor: theme.colors.background.card,
           borderRadius: theme.borderRadius.lg,
-          padding: theme.spacing.md,
+          paddingVertical: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.xs,
           borderWidth: 1,
           borderColor: theme.colors.border.light,
-          justifyContent: 'space-between',
+          alignItems: 'center',
         }}
       >
         <LinearGradient
@@ -172,49 +171,46 @@ export default function JobSeekerHome() {
             borderRadius: theme.borderRadius.lg,
           }}
         />
-        {/* Text at the top */}
+        <Ionicons
+          name="person-circle-outline"
+          size={24}
+          color={theme.colors.primary.teal}
+          style={{ marginBottom: theme.spacing.xs }}
+        />
         <Text
           style={{
-            fontSize: theme.typography.sizes.sm,
-            fontFamily: theme.typography.fonts.semiBold,
+            fontSize: theme.typography.sizes.lg,
+            fontFamily: theme.typography.fonts.bold,
+            color: theme.colors.primary.teal,
+            marginBottom: 2,
+          }}
+        >
+          {userData?.statistics?.profile_completion ? `${userData.statistics.profile_completion}%` : '--'}
+        </Text>
+        <Text
+          style={{
+            fontSize: theme.typography.sizes.xs,
+            fontFamily: theme.typography.fonts.medium,
             color: theme.colors.text.secondary,
             textAlign: 'center',
           }}
+          numberOfLines={1}
         >
           Profile
         </Text>
-
-        {/* Number and Icon at the bottom */}
-        <View style={{ alignItems: 'center' }}>
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.xl,
-              fontFamily: theme.typography.fonts.bold,
-              color: theme.colors.primary.teal,
-              marginBottom: theme.spacing.xs,
-            }}
-          >
-            {userData?.statistics?.profile_completion ? `${userData.statistics.profile_completion}%` : '--'}
-          </Text>
-          <Ionicons
-            name="person-circle-outline"
-            size={20}
-            color={theme.colors.primary.teal}
-          />
-        </View>
       </View>
 
       {/* Applications Card */}
       <View
         style={{
           flex: 1,
-          aspectRatio: 1,
           backgroundColor: theme.colors.background.card,
           borderRadius: theme.borderRadius.lg,
-          padding: theme.spacing.md,
+          paddingVertical: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.xs,
           borderWidth: 1,
           borderColor: theme.colors.border.light,
-          justifyContent: 'space-between',
+          alignItems: 'center',
         }}
       >
         <LinearGradient
@@ -228,49 +224,46 @@ export default function JobSeekerHome() {
             borderRadius: theme.borderRadius.lg,
           }}
         />
-        {/* Text at the top */}
+        <Ionicons
+          name="document-text-outline"
+          size={24}
+          color={theme.colors.primary.orange}
+          style={{ marginBottom: theme.spacing.xs }}
+        />
         <Text
           style={{
-            fontSize: theme.typography.sizes.sm,
-            fontFamily: theme.typography.fonts.semiBold,
+            fontSize: theme.typography.sizes.lg,
+            fontFamily: theme.typography.fonts.bold,
+            color: theme.colors.primary.orange,
+            marginBottom: 2,
+          }}
+        >
+          {userData?.statistics?.total_applications || 0}
+        </Text>
+        <Text
+          style={{
+            fontSize: theme.typography.sizes.xs,
+            fontFamily: theme.typography.fonts.medium,
             color: theme.colors.text.secondary,
             textAlign: 'center',
           }}
+          numberOfLines={1}
         >
-          Applications
+          Apps
         </Text>
-
-        {/* Number and Icon at the bottom */}
-        <View style={{ alignItems: 'center' }}>
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.xl,
-              fontFamily: theme.typography.fonts.bold,
-              color: theme.colors.primary.orange,
-              marginBottom: theme.spacing.xs,
-            }}
-          >
-            {userData?.statistics?.total_applications || 0}
-          </Text>
-          <Ionicons
-            name="document-text-outline"
-            size={20}
-            color={theme.colors.primary.orange}
-          />
-        </View>
       </View>
 
       {/* Interviews Card */}
       <View
         style={{
           flex: 1,
-          aspectRatio: 1,
           backgroundColor: theme.colors.background.card,
           borderRadius: theme.borderRadius.lg,
-          padding: theme.spacing.md,
+          paddingVertical: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.xs,
           borderWidth: 1,
           borderColor: theme.colors.border.light,
-          justifyContent: 'space-between',
+          alignItems: 'center',
         }}
       >
         <LinearGradient
@@ -284,36 +277,33 @@ export default function JobSeekerHome() {
             borderRadius: theme.borderRadius.lg,
           }}
         />
-        {/* Text at the top */}
+        <Ionicons
+          name="calendar-outline"
+          size={24}
+          color={theme.colors.primary.deepBlue}
+          style={{ marginBottom: theme.spacing.xs }}
+        />
         <Text
           style={{
-            fontSize: theme.typography.sizes.sm,
-            fontFamily: theme.typography.fonts.semiBold,
+            fontSize: theme.typography.sizes.lg,
+            fontFamily: theme.typography.fonts.bold,
+            color: theme.colors.primary.deepBlue,
+            marginBottom: 2,
+          }}
+        >
+          {userData?.statistics?.interview_scheduled || 0}
+        </Text>
+        <Text
+          style={{
+            fontSize: theme.typography.sizes.xs,
+            fontFamily: theme.typography.fonts.medium,
             color: theme.colors.text.secondary,
             textAlign: 'center',
           }}
+          numberOfLines={1}
         >
           Interviews
         </Text>
-
-        {/* Number and Icon at the bottom */}
-        <View style={{ alignItems: 'center' }}>
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.xl,
-              fontFamily: theme.typography.fonts.bold,
-              color: theme.colors.primary.deepBlue,
-              marginBottom: theme.spacing.xs,
-            }}
-          >
-            {userData?.statistics?.interview_scheduled || 0}
-          </Text>
-          <Ionicons
-            name="calendar-outline"
-            size={20}
-            color={theme.colors.primary.deepBlue}
-          />
-        </View>
       </View>
     </View>
   );

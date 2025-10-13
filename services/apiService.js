@@ -992,6 +992,86 @@ class ApiService {
     }
   }
 
+  // Verify Email API
+  async verifyEmail(data) {
+    try {
+      if (__DEV__) {
+        console.log('📧 Verify Email Request:', { email: data.email, user_type: data.user_type });
+      }
+
+      const response = await apiClient.post(API_CONFIG.ENDPOINTS.VERIFY_EMAIL, data, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      });
+
+      if (__DEV__) {
+        console.log('📧 Verify Email Response:', response.data);
+      }
+
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message
+      };
+    } catch (error) {
+      if (__DEV__) {
+        console.log('❌ Verify Email Error:', error);
+        if (error.response) {
+          console.log('❌ Error Response Status:', error.response.status);
+          console.log('❌ Error Response Data:', error.response.data);
+        }
+      }
+
+      return {
+        success: false,
+        errors: error.response?.data?.errors || error.data?.data?.errors || [error.message || 'Verification failed'],
+        message: error.response?.data?.message || error.data?.message || 'Invalid verification code'
+      };
+    }
+  }
+
+  // Resend Verification Code API
+  async resendVerificationCode(data) {
+    try {
+      if (__DEV__) {
+        console.log('🔄 Resend Verification Code Request:', { email: data.email, user_type: data.user_type });
+      }
+
+      const response = await apiClient.post(API_CONFIG.ENDPOINTS.RESEND_VERIFICATION, data, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      });
+
+      if (__DEV__) {
+        console.log('🔄 Resend Verification Code Response:', response.data);
+      }
+
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message
+      };
+    } catch (error) {
+      if (__DEV__) {
+        console.log('❌ Resend Verification Code Error:', error);
+        if (error.response) {
+          console.log('❌ Error Response Status:', error.response.status);
+          console.log('❌ Error Response Data:', error.response.data);
+        }
+      }
+
+      return {
+        success: false,
+        errors: error.response?.data?.errors || error.data?.data?.errors || [error.message || 'Failed to resend code'],
+        message: error.response?.data?.message || error.data?.message || 'Failed to resend verification code'
+      };
+    }
+  }
+
   // Logout
   async logout() {
     try {

@@ -28,6 +28,8 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
+  const [updateError, setUpdateError] = useState('');
+  const [updateSuccess, setUpdateSuccess] = useState('');
 
   // User profile data from API
   const [userProfile, setUserProfile] = useState(null);
@@ -87,16 +89,20 @@ export default function Profile() {
   const handleEditField = (field, currentValue) => {
     setEditingField(field);
     setTempValue(currentValue || '');
+    setUpdateError('');
+    setUpdateSuccess('');
     setShowEditModal(true);
   };
 
   const handleSaveField = async () => {
     if (!tempValue.trim()) {
-      Alert.alert('Validation Error', 'Please enter a valid value.');
+      setUpdateError('Please enter a valid value');
       return;
     }
 
     setUpdating(true);
+    setUpdateError('');
+    setUpdateSuccess('');
 
     try {
       const userId = await SecureStore.getItemAsync('user_id');
@@ -114,11 +120,15 @@ export default function Profile() {
             }
           }));
 
-          Alert.alert(
-            'Change Submitted',
-            'Your change has been submitted for admin approval. You will be notified once it\'s reviewed.',
-            [{ text: 'OK' }]
-          );
+          setUpdateSuccess('Your change has been submitted for admin approval. You will be notified once it\'s reviewed.');
+
+          // Close modal after a delay to show success message
+          setTimeout(() => {
+            setShowEditModal(false);
+            setEditingField(null);
+            setTempValue('');
+            setUpdateSuccess('');
+          }, 2000);
         } else {
           // Update profile immediately for non-critical fields
           if (editingField === 'skills') {
@@ -135,30 +145,28 @@ export default function Profile() {
             }));
           }
 
-          Alert.alert(
-            'Profile Updated',
-            'Your profile has been updated successfully.',
-            [{ text: 'OK' }]
-          );
+          setUpdateSuccess('Your profile has been updated successfully.');
+
+          // Close modal after a delay to show success message
+          setTimeout(() => {
+            setShowEditModal(false);
+            setEditingField(null);
+            setTempValue('');
+            setUpdateSuccess('');
+          }, 1500);
         }
       } else {
-        Alert.alert(
-          'Update Failed',
-          response.message || 'Failed to update profile. Please try again.',
-          [{ text: 'OK' }]
-        );
+        // Show specific error from API
+        if (response.errors && Array.isArray(response.errors) && response.errors.length > 0) {
+          setUpdateError(response.errors.join('\n'));
+        } else {
+          setUpdateError(response.message || 'Failed to update profile. Please try again.');
+        }
       }
     } catch (error) {
-      Alert.alert(
-        'Error',
-        'Network error. Please check your connection and try again.',
-        [{ text: 'OK' }]
-      );
+      setUpdateError('Network error. Please check your connection and try again.');
     } finally {
       setUpdating(false);
-      setShowEditModal(false);
-      setEditingField(null);
-      setTempValue('');
     }
   };
 
@@ -1201,13 +1209,22 @@ export default function Profile() {
 
       <EditModal
         visible={showEditModal}
-        onClose={() => setShowEditModal(false)}
+        onClose={() => {
+          setShowEditModal(false);
+          setUpdateError('');
+          setUpdateSuccess('');
+        }}
         onSave={handleSaveField}
         field={editingField}
         value={tempValue}
-        onChangeText={setTempValue}
+        onChangeText={(text) => {
+          setTempValue(text);
+          setUpdateError(''); // Clear error when user starts typing
+        }}
         isLoading={updating}
         isCriticalField={criticalFields.includes(editingField)}
+        error={updateError}
+        success={updateSuccess}
       />
       <LogoutModal />
     </View>

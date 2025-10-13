@@ -160,7 +160,7 @@ export default function JobSeekerLogin() {
   };
 
   const handleForgotPassword = () => {
-    router.push('/forgot-password');
+    router.push('/forgot-password?type=jobseeker');
   };
 
   const handleSignUp = () => {

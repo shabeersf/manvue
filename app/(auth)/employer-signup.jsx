@@ -1,11 +1,13 @@
 import CustomDropdown from '@/components/CustomDropdown';
 import CustomInput from '@/components/CustomInput';
 import SafeAreaWrapper from '@/components/SafeAreaWrapper';
+import VerificationModal from '@/components/VerificationModal';
 import apiService from '@/services/apiService';
 import theme from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import React, { useState } from 'react';
 import {
   Dimensions,
@@ -57,6 +59,10 @@ export default function EmployerSignup() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [signupError, setSignupError] = useState("");
+
+  // Email verification state (for new verification-first flow)
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [signupEmail, setSignupEmail] = useState('');
 
   // Dropdown Options
   const genderOptions = [
@@ -217,7 +223,23 @@ export default function EmployerSignup() {
       });
 
       if (response.success) {
-        setShowSuccessModal(true);
+        // New flow: Check if verification is required (should always be true now)
+        if (response.requires_verification || response.data?.verification_required) {
+          // Store email for verification modal
+          setSignupEmail(formData.email);
+
+          // Show verification modal
+          setShowVerificationModal(true);
+          setIsRegistering(false);
+
+          console.log('✅ Employer signup data submitted, verification modal shown');
+          return;
+        }
+
+        // Fallback (should not reach here with new flow, but keeping for safety)
+        console.warn('⚠️ Unexpected response: verification not required');
+        setSignupError('Unexpected response from server. Please try again.');
+
       } else {
         // Handle validation errors from backend - display exact errors from API
         if (response.errors && Array.isArray(response.errors) && response.errors.length > 0) {
@@ -237,10 +259,22 @@ export default function EmployerSignup() {
     }
   };
 
-  // Handle success completion
+  // Handle success completion - Auto-login and navigate to employer home
   const handleSuccess = () => {
     setShowSuccessModal(false);
-    router.replace('/employer-login');
+    router.replace('/employer/home');
+  };
+
+  // Verification handler (called when verification succeeds)
+  const handleVerificationSuccess = (userData) => {
+    console.log('✅ Verification successful, user data received:', userData);
+    // The VerificationModal component handles navigation automatically
+  };
+
+  // Close verification modal handler
+  const handleCloseVerification = () => {
+    setShowVerificationModal(false);
+    // Optionally navigate back or show a message
   };
 
   return (
@@ -785,6 +819,15 @@ export default function EmployerSignup() {
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* Email Verification Modal - New Separate Component */}
+      <VerificationModal
+        visible={showVerificationModal}
+        email={signupEmail}
+        userType="employer"
+        onVerified={handleVerificationSuccess}
+        onClose={handleCloseVerification}
+      />
+
       {/* Success Modal */}
       <Modal
         visible={showSuccessModal}
@@ -893,7 +936,7 @@ export default function EmployerSignup() {
                     color: theme.colors.neutral.white,
                   }}
                 >
-                  Continue to Login
+                  Go to Dashboard
                 </Text>
               </LinearGradient>
             </TouchableOpacity>

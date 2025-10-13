@@ -28,6 +28,8 @@ const EditModal = ({
   keyboardType = 'default',
   autoCapitalize = 'sentences',
   style,
+  error,
+  success,
 }) => {
   // Helper function to format field names for display
   const formatFieldName = (fieldName) => {
@@ -184,13 +186,136 @@ const EditModal = ({
                 fontSize: theme.typography.sizes.base,
                 fontFamily: theme.typography.fonts.regular,
                 color: theme.colors.text.primary,
-                marginBottom: theme.spacing.lg,
+                marginBottom: field === 'skills' ? theme.spacing.sm : theme.spacing.lg,
                 textAlignVertical: shouldBeMultiline() ? 'top' : 'center',
                 minHeight: shouldBeMultiline() ? 80 : 50,
               },
               style?.input,
             ]}
           />
+
+          {/* Helper text for skills field */}
+          {field === 'skills' && !error && !success && (
+            <View
+              style={{
+                backgroundColor: theme.colors.background.accent,
+                borderRadius: theme.borderRadius.md,
+                padding: theme.spacing.sm,
+                marginBottom: theme.spacing.lg,
+                flexDirection: 'row',
+                alignItems: 'center',
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.xs,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: theme.colors.primary.teal,
+                  fontStyle: 'italic',
+                }}
+              >
+                💡 Tip: Use commas to separate skills (e.g., JavaScript, React, Node.js)
+              </Text>
+            </View>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <View
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                borderRadius: theme.borderRadius.md,
+                padding: theme.spacing.md,
+                marginBottom: theme.spacing.lg,
+                borderLeftWidth: 3,
+                borderLeftColor: theme.colors.status.error,
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+              }}
+            >
+              <View
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 10,
+                  backgroundColor: theme.colors.status.error,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  marginRight: theme.spacing.sm,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.bold,
+                    color: theme.colors.neutral.white,
+                  }}
+                >
+                  !
+                </Text>
+              </View>
+              <Text
+                style={{
+                  flex: 1,
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: theme.colors.status.error,
+                  lineHeight: theme.typography.sizes.sm * 1.4,
+                }}
+              >
+                {error}
+              </Text>
+            </View>
+          )}
+
+          {/* Success Message */}
+          {success && (
+            <View
+              style={{
+                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                borderRadius: theme.borderRadius.md,
+                padding: theme.spacing.md,
+                marginBottom: theme.spacing.lg,
+                borderLeftWidth: 3,
+                borderLeftColor: theme.colors.status.success,
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+              }}
+            >
+              <View
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 10,
+                  backgroundColor: theme.colors.status.success,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  marginRight: theme.spacing.sm,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.bold,
+                    color: theme.colors.neutral.white,
+                  }}
+                >
+                  ✓
+                </Text>
+              </View>
+              <Text
+                style={{
+                  flex: 1,
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: theme.colors.status.success,
+                  lineHeight: theme.typography.sizes.sm * 1.4,
+                }}
+              >
+                {success}
+              </Text>
+            </View>
+          )}
 
           {/* Action Buttons */}
           <View style={[{ flexDirection: 'row', gap: theme.spacing.md }, style?.buttonContainer]}>
