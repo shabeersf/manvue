@@ -127,11 +127,17 @@ export default function VerificationModal({
           onVerified(response.data);
         }
 
-        // Navigate to appropriate home page based on user type
-        if (userType === 'jobseeker') {
-          router.replace('/jobseeker/home');
-        } else if (userType === 'employer') {
-          router.replace('/employer/home');
+        // Check if payment is required (jobseekers only)
+        if (response.payment_required === true && userType === 'jobseeker') {
+          console.log('💳 Payment required for jobseeker, redirecting to payment screen');
+          router.replace('/payment');
+        } else {
+          // Navigate to appropriate home page based on user type
+          if (userType === 'jobseeker') {
+            router.replace('/jobseeker/home');
+          } else if (userType === 'employer') {
+            router.replace('/employer/home');
+          }
         }
       } else {
         setVerificationError(response.message || 'Invalid verification code');

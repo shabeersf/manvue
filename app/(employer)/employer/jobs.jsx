@@ -1,20 +1,20 @@
 import apiService from '@/services/apiService';
 import theme from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
-import * as SecureStore from 'expo-secure-store';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    FlatList,
-    RefreshControl,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  FlatList,
+  RefreshControl,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 const { width } = Dimensions.get('window');
@@ -340,7 +340,7 @@ export default function EmployerJobs() {
 
     return (
       <TouchableOpacity
-        onPress={() => router.push(`/employer/jobs/${item.id}`)}
+        onPress={() => router.push(`/edit-jobs/${item.id}`)}
         style={{
           backgroundColor: theme.colors.background.card,
           borderRadius: theme.borderRadius.lg,

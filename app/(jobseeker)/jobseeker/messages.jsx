@@ -1,138 +1,75 @@
+import apiService from '@/services/apiService';
 import theme from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-    FlatList,
-    RefreshControl,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 export default function Messages() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'unread', 'blocked'
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [messages, setMessages] = useState([]);
+  const [filterCounts, setFilterCounts] = useState({ all: 0, unread: 0, blocked: 0 });
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Mock messages data
-  const [messages] = useState([
-    {
-      id: '1',
-      companyName: 'TechCorp Solutions',
-      companyInitial: 'TC',
-      lastMessage: 'Thank you for accepting our proposal! We are excited to move forward...',
-      timestamp: '2 mins ago',
-      unreadCount: 3,
-      isBlocked: false,
-      status: 'active', // 'active', 'blocked', 'reported'
-      isOnline: true,
-      messageType: 'text',
-      senderType: 'company', // 'company' or 'user'
-    },
-    {
-      id: '2',
-      companyName: 'Digital Innovations',
-      companyInitial: 'DI',
-      lastMessage: 'We have reviewed your CV and would like to schedule an interview...',
-      timestamp: '1 hour ago',
-      unreadCount: 1,
-      isBlocked: false,
-      status: 'active',
-      isOnline: false,
-      messageType: 'text',
-      senderType: 'company',
-    },
-    {
-      id: '3',
-      companyName: 'StartupHub',
-      companyInitial: 'SH',
-      lastMessage: 'You: I am interested in learning more about the role',
-      timestamp: '3 hours ago',
-      unreadCount: 0,
-      isBlocked: false,
-      status: 'active',
-      isOnline: true,
-      messageType: 'text',
-      senderType: 'user',
-    },
-    {
-      id: '4',
-      companyName: 'InnovateCorp',
-      companyInitial: 'IC',
-      lastMessage: 'Please find the updated job description attached',
-      timestamp: '1 day ago',
-      unreadCount: 0,
-      isBlocked: false,
-      status: 'active',
-      isOnline: false,
-      messageType: 'file',
-      senderType: 'company',
-    },
-    {
-      id: '5',
-      companyName: 'DevSolutions Ltd',
-      companyInitial: 'DS',
-      lastMessage: 'Thank you for your interest. However, we have decided...',
-      timestamp: '2 days ago',
-      unreadCount: 0,
-      isBlocked: true,
-      status: 'blocked',
-      isOnline: false,
-      messageType: 'text',
-      senderType: 'company',
-    },
-    {
-      id: '6',
-      companyName: 'FutureTech',
-      companyInitial: 'FT',
-      lastMessage: 'Your profile matches our requirements perfectly...',
-      timestamp: '3 days ago',
-      unreadCount: 2,
-      isBlocked: false,
-      status: 'active',
-      isOnline: true,
-      messageType: 'text',
-      senderType: 'company',
-    },
-  ]);
+  useEffect(() => {
+    fetchConversations();
+  }, [activeFilter]);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 2000);
-  };
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery !== undefined) {
+        fetchConversations();
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-  // Filter messages based on active filter and search query
-  const getFilteredMessages = () => {
-    let filtered = messages;
+  const fetchConversations = async (showLoader = true) => {
+    try {
+      if (showLoader) setIsLoading(true);
 
-    // Apply status filter
-    switch (activeFilter) {
-      case 'unread':
-        filtered = filtered.filter(msg => msg.unreadCount > 0);
-        break;
-      case 'blocked':
-        filtered = filtered.filter(msg => msg.isBlocked);
-        break;
-      default:
-        filtered = filtered.filter(msg => !msg.isBlocked);
-    }
-
-    // Apply search filter
-    if (searchQuery.trim()) {
-      filtered = filtered.filter(msg =>
-        msg.companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        msg.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
+      const result = await apiService.getJobseekerChatList(
+        searchQuery,
+        activeFilter,
+        50,
+        0
       );
-    }
 
-    return filtered;
+      if (result.success) {
+        setMessages(result.data.conversations || []);
+        setFilterCounts(result.data.filter_counts || { all: 0, unread: 0, blocked: 0 });
+      } else {
+        console.error('Error fetching conversations:', result.message);
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      setMessages([]);
+    } finally {
+      if (showLoader) setIsLoading(false);
+    }
   };
 
-  // Header Component
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchConversations(false);
+    setRefreshing(false);
+  };
+
+  const handleChatPress = (item) => {
+    router.push(`/message-details/${item.conversation_id}`);
+  };
+
   const Header = () => (
     <View
       style={{
@@ -144,7 +81,6 @@ export default function Messages() {
         borderBottomColor: theme.colors.border.light,
       }}
     >
-      {/* Search Bar */}
       <View
         style={{
           flexDirection: 'row',
@@ -179,21 +115,16 @@ export default function Messages() {
             onPress={() => setSearchQuery('')}
             style={{ padding: theme.spacing.xs }}
           >
-            <Ionicons
-              name="close"
-              size={16}
-              color={theme.colors.text.tertiary}
-            />
+            <Ionicons name="close" size={16} color={theme.colors.text.tertiary} />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Filter Tabs */}
       <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
         {[
-          { id: 'all', label: 'All', count: messages.filter(m => !m.isBlocked).length },
-          { id: 'unread', label: 'Unread', count: messages.filter(m => m.unreadCount > 0 && !m.isBlocked).length },
-          { id: 'blocked', label: 'Blocked', count: messages.filter(m => m.isBlocked).length },
+          { id: 'all', label: 'All', count: filterCounts.all },
+          { id: 'unread', label: 'Unread', count: filterCounts.unread },
+          { id: 'blocked', label: 'Blocked', count: filterCounts.blocked },
         ].map((filter) => (
           <TouchableOpacity
             key={filter.id}
@@ -254,194 +185,182 @@ export default function Messages() {
     </View>
   );
 
-  // Message Item Component
   const MessageItem = ({ item }) => (
     <TouchableOpacity
-      onPress={() => router.push(`/message-details/${item.id}`)}
+      onPress={() => handleChatPress(item)}
       style={{
+        flexDirection: 'row',
+        padding: theme.spacing.lg,
         backgroundColor: theme.colors.background.card,
-        paddingHorizontal: theme.spacing.lg,
-        paddingVertical: theme.spacing.md,
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border.light,
-        opacity: item.isBlocked ? 0.6 : 1,
       }}
-      activeOpacity={0.8}
+      activeOpacity={0.7}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        {/* Company Avatar */}
-        <View style={{ position: 'relative', marginRight: theme.spacing.md }}>
-          <View
+      <View style={{ marginRight: theme.spacing.md, position: 'relative' }}>
+        <View
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: theme.borderRadius.full,
+            backgroundColor: item.unreadCount > 0 
+              ? theme.colors.primary.teal 
+              : theme.colors.background.accent,
+            justifyContent: 'center',
+            alignItems: 'center',
+            borderWidth: item.unreadCount > 0 ? 2 : 1,
+            borderColor: item.unreadCount > 0 
+              ? theme.colors.primary.teal 
+              : theme.colors.border.light,
+          }}
+        >
+          <Text
             style={{
-              width: 50,
-              height: 50,
-              borderRadius: 25,
-              backgroundColor: item.unreadCount > 0 
-                ? theme.colors.primary.teal 
-                : theme.colors.background.accent,
-              justifyContent: 'center',
-              alignItems: 'center',
-              borderWidth: item.unreadCount > 0 ? 2 : 1,
-              borderColor: item.unreadCount > 0 
-                ? theme.colors.primary.teal 
-                : theme.colors.border.light,
+              fontSize: theme.typography.sizes.base,
+              fontFamily: theme.typography.fonts.bold,
+              color: item.unreadCount > 0 
+                ? theme.colors.neutral.white 
+                : theme.colors.primary.teal,
             }}
           >
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.base,
-                fontFamily: theme.typography.fonts.bold,
-                color: item.unreadCount > 0 
-                  ? theme.colors.neutral.white 
-                  : theme.colors.primary.teal,
-              }}
-            >
-              {item.companyInitial}
-            </Text>
-          </View>
-
-          {/* Online status */}
-          {item.isOnline && !item.isBlocked && (
-            <View
-              style={{
-                position: 'absolute',
-                bottom: 2,
-                right: 2,
-                width: 12,
-                height: 12,
-                borderRadius: 6,
-                backgroundColor: theme.colors.status.success,
-                borderWidth: 2,
-                borderColor: theme.colors.background.card,
-              }}
-            />
-          )}
-
-          {/* Blocked indicator */}
-          {item.isBlocked && (
-            <View
-              style={{
-                position: 'absolute',
-                bottom: 2,
-                right: 2,
-                width: 12,
-                height: 12,
-                borderRadius: 6,
-                backgroundColor: theme.colors.status.error,
-                borderWidth: 2,
-                borderColor: theme.colors.background.card,
-              }}
-            />
-          )}
+            {item.companyInitial}
+          </Text>
         </View>
 
-        {/* Message Content */}
-        <View style={{ flex: 1 }}>
+        {item.isOnline && !item.isBlocked && (
           <View
             style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: theme.spacing.xs,
+              position: 'absolute',
+              bottom: 2,
+              right: 2,
+              width: 12,
+              height: 12,
+              borderRadius: 6,
+              backgroundColor: theme.colors.status.success,
+              borderWidth: 2,
+              borderColor: theme.colors.background.card,
             }}
+          />
+        )}
+
+        {item.isBlocked && (
+          <View
+            style={{
+              position: 'absolute',
+              bottom: 2,
+              right: 2,
+              width: 12,
+              height: 12,
+              borderRadius: 6,
+              backgroundColor: theme.colors.status.error,
+              borderWidth: 2,
+              borderColor: theme.colors.background.card,
+            }}
+          />
+        )}
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: theme.spacing.xs,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.base,
+              fontFamily: item.unreadCount > 0 
+                ? theme.typography.fonts.semiBold 
+                : theme.typography.fonts.medium,
+              color: theme.colors.text.primary,
+              flex: 1,
+            }}
+            numberOfLines={1}
           >
+            {item.companyName}
+          </Text>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
+            {item.messageType === 'file' && (
+              <Ionicons
+                name="document-attach-outline"
+                size={14}
+                color={theme.colors.text.tertiary}
+              />
+            )}
+
+            {item.isBlocked && (
+              <Ionicons
+                name="ban-outline"
+                size={14}
+                color={theme.colors.status.error}
+              />
+            )}
+
             <Text
               style={{
-                fontSize: theme.typography.sizes.base,
-                fontFamily: item.unreadCount > 0 
-                  ? theme.typography.fonts.semiBold 
-                  : theme.typography.fonts.medium,
-                color: theme.colors.text.primary,
-                flex: 1,
+                fontSize: theme.typography.sizes.xs,
+                fontFamily: theme.typography.fonts.regular,
+                color: theme.colors.text.tertiary,
               }}
-              numberOfLines={1}
             >
-              {item.companyName}
+              {item.timestamp}
             </Text>
+          </View>
+        </View>
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
-              {/* Message type indicator */}
-              {item.messageType === 'file' && (
-                <Ionicons
-                  name="document-attach-outline"
-                  size={14}
-                  color={theme.colors.text.tertiary}
-                />
-              )}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.sm,
+              fontFamily: theme.typography.fonts.regular,
+              color: item.unreadCount > 0 
+                ? theme.colors.text.primary 
+                : theme.colors.text.secondary,
+              flex: 1,
+              marginRight: theme.spacing.sm,
+            }}
+            numberOfLines={1}
+          >
+            {item.lastMessage}
+          </Text>
 
-              {/* Blocked indicator */}
-              {item.isBlocked && (
-                <Ionicons
-                  name="ban-outline"
-                  size={14}
-                  color={theme.colors.status.error}
-                />
-              )}
-
+          {item.unreadCount > 0 && (
+            <View
+              style={{
+                backgroundColor: theme.colors.primary.teal,
+                borderRadius: theme.borderRadius.full,
+                paddingHorizontal: theme.spacing.xs,
+                paddingVertical: 2,
+                minWidth: 20,
+                alignItems: 'center',
+              }}
+            >
               <Text
                 style={{
                   fontSize: theme.typography.sizes.xs,
-                  fontFamily: theme.typography.fonts.regular,
-                  color: theme.colors.text.tertiary,
+                  fontFamily: theme.typography.fonts.bold,
+                  color: theme.colors.neutral.white,
                 }}
               >
-                {item.timestamp}
+                {item.unreadCount > 99 ? '99+' : item.unreadCount}
               </Text>
             </View>
-          </View>
-
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.regular,
-                color: item.unreadCount > 0 
-                  ? theme.colors.text.primary 
-                  : theme.colors.text.secondary,
-                flex: 1,
-                marginRight: theme.spacing.sm,
-              }}
-              numberOfLines={1}
-            >
-              {item.lastMessage}
-            </Text>
-
-            {/* Unread count badge */}
-            {item.unreadCount > 0 && (
-              <View
-                style={{
-                  backgroundColor: theme.colors.primary.teal,
-                  borderRadius: theme.borderRadius.full,
-                  paddingHorizontal: theme.spacing.xs,
-                  paddingVertical: 2,
-                  minWidth: 20,
-                  alignItems: 'center',
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: theme.typography.sizes.xs,
-                    fontFamily: theme.typography.fonts.bold,
-                    color: theme.colors.neutral.white,
-                  }}
-                >
-                  {item.unreadCount > 99 ? '99+' : item.unreadCount}
-                </Text>
-              </View>
-            )}
-          </View>
+          )}
         </View>
       </View>
     </TouchableOpacity>
   );
 
-  // Empty State Component
   const EmptyState = () => (
     <View
       style={{
@@ -506,17 +425,36 @@ export default function Messages() {
     </View>
   );
 
-  const filteredMessages = getFilteredMessages();
+  if (isLoading) {
+    return (
+      <View style={{ 
+        flex: 1, 
+        backgroundColor: theme.colors.background.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}>
+        <ActivityIndicator size="large" color={theme.colors.primary.teal} />
+        <Text style={{
+          marginTop: theme.spacing.md,
+          fontSize: theme.typography.sizes.base,
+          fontFamily: theme.typography.fonts.medium,
+          color: theme.colors.text.secondary,
+        }}>
+          Loading conversations...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background.primary }}>
       <Header />
       
-      {filteredMessages.length === 0 ? (
+      {messages.length === 0 ? (
         <EmptyState />
       ) : (
         <FlatList
-          data={filteredMessages}
+          data={messages}
           renderItem={({ item }) => <MessageItem item={item} />}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}

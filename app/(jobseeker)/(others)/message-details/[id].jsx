@@ -1,212 +1,304 @@
+import apiService from '@/services/apiService';
 import theme from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    FlatList,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    StatusBar,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
+  Platform,
+  ScrollView,
+  StatusBar,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 export default function MessageDetails() {
-  const { id } = useLocalSearchParams();
+  const receivedData = useLocalSearchParams();
+  const conversationId = receivedData.id;
   const [messageText, setMessageText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [selectedReason, setSelectedReason] = useState('');
   const [isBlocked, setIsBlocked] = useState(false);
   const [isSendingFile, setIsSendingFile] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
   const flatListRef = useRef(null);
 
-  // Mock company data based on ID
-  const [companyData] = useState({
-    id: '1',
-    name: 'TechCorp Solutions',
-    initial: 'TC',
-    isOnline: true,
-    lastSeen: 'online',
-    isBlocked: false,
-  });
+  const [companyData, setCompanyData] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [conversationInfo, setConversationInfo] = useState(null);
 
-  // Mock messages data
-  const [messages, setMessages] = useState([
-    {
-      id: '1',
-      text: 'Hello! Thank you for accepting our job proposal. We are excited to have you join our team.',
-      timestamp: '2024-01-15 10:30',
-      sender: 'company',
-      type: 'text',
-      status: 'read',
-    },
-    {
-      id: '2',
-      text: 'We would like to schedule an initial discussion about your role and responsibilities.',
-      timestamp: '2024-01-15 10:32',
-      sender: 'company',
-      type: 'text',
-      status: 'read',
-    },
-    {
-      id: '3',
-      text: 'Thank you for reaching out! I am very excited about this opportunity.',
-      timestamp: '2024-01-15 10:45',
-      sender: 'user',
-      type: 'text',
-      status: 'sent',
-    },
-    {
-      id: '4',
-      text: 'Could you please share some more details about the team structure and the projects I would be working on?',
-      timestamp: '2024-01-15 10:46',
-      sender: 'user',
-      type: 'text',
-      status: 'read',
-    },
-    {
-      id: '5',
-      text: 'Absolutely! Please find the detailed job description and team information attached.',
-      timestamp: '2024-01-15 11:15',
-      sender: 'company',
-      type: 'file',
-      fileName: 'Job_Description_Senior_React_Developer.pdf',
-      fileSize: '245 KB',
-      status: 'read',
-    },
-    {
-      id: '6',
-      text: 'Could you also share your updated CV so we can prepare for the discussion?',
-      timestamp: '2024-01-15 11:16',
-      sender: 'company',
-      type: 'text',
-      status: 'read',
-    },
-  ]);
+  const [showFileViewer, setShowFileViewer] = useState(false);
+  const [viewerFile, setViewerFile] = useState(null);
 
   useEffect(() => {
-    // Scroll to bottom when component mounts
-    setTimeout(() => {
-      if (flatListRef.current) {
-        flatListRef.current.scrollToEnd({ animated: false });
-      }
-    }, 100);
-  }, []);
+    if (conversationId) {
+      fetchMessages();
+      const interval = setInterval(() => fetchMessages(false), 5000);
+      return () => clearInterval(interval);
+    }
+  }, [conversationId]);
 
-  const sendMessage = () => {
-    if (messageText.trim() && !isBlocked) {
-      const newMessage = {
-        id: Date.now().toString(),
-        text: messageText.trim(),
-        timestamp: new Date().toISOString().slice(0, 16).replace('T', ' '),
-        sender: 'user',
-        type: 'text',
-        status: 'sent',
-      };
+  const fetchMessages = async (showLoader = true) => {
+    try {
+      if (showLoader) setIsLoading(true);
+      const result = await apiService.getConversationMessages2(conversationId);
 
-      setMessages(prev => [...prev, newMessage]);
-      setMessageText('');
-      
-      // Scroll to bottom
-      setTimeout(() => {
-        if (flatListRef.current) {
-          flatListRef.current.scrollToEnd({ animated: true });
+      if (result.success) {
+        const newMessages = result.data.messages || [];
+        
+        // Check if there are actually NEW messages (by comparing last message ID)
+        const hasNewMessages = showLoader || (
+          newMessages.length > 0 && 
+          messages.length > 0 && 
+          newMessages[newMessages.length - 1]?.id !== messages[messages.length - 1]?.id
+        );
+        
+        setMessages(newMessages);
+        setConversationInfo(result.data.conversation);
+
+        const otherParticipant = result.data.conversation?.other_participant;
+        if (otherParticipant) {
+          setCompanyData({
+            id: otherParticipant.user_id,
+            name: otherParticipant.name,
+            initial: getInitials(otherParticipant.name),
+            isOnline: false,
+            lastSeen: 'online',
+            email: otherParticipant.email,
+            profileImage: otherParticipant.profile_image,
+          });
         }
-      }, 100);
 
-      // Simulate company typing and response
-      setIsTyping(true);
-      setTimeout(() => {
-        setIsTyping(false);
-        // Add a sample response
-        const response = {
-          id: (Date.now() + 1).toString(),
-          text: 'Thank you for your message. We will get back to you shortly.',
-          timestamp: new Date().toISOString().slice(0, 16).replace('T', ' '),
-          sender: 'company',
-          type: 'text',
-          status: 'sent',
-        };
-        setMessages(prev => [...prev, response]);
-        setTimeout(() => {
-          if (flatListRef.current) {
-            flatListRef.current.scrollToEnd({ animated: true });
-          }
-        }, 100);
-      }, 2000);
+        // Only scroll if it's initial load OR genuinely new message arrived
+        if (hasNewMessages) {
+          setTimeout(() => {
+            if (flatListRef.current) {
+              flatListRef.current.scrollToEnd({ animated: !showLoader });
+            }
+          }, 100);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+      if (showLoader) {
+        Alert.alert('Error', 'Failed to load messages');
+      }
+    } finally {
+      if (showLoader) setIsLoading(false);
     }
   };
 
-  const handleFileUpload = () => {
-    if (isBlocked) return;
-    
-    Alert.alert(
-      'Upload CV',
-      'Choose an option',
-      [
-        { text: 'Choose from Files', onPress: () => uploadFromFiles() },
-        { text: 'Take Photo', onPress: () => uploadFromCamera() },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
+  const getInitials = (name) => {
+    if (!name) return '??';
+    const parts = name.trim().split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
   };
 
-  const uploadFromFiles = () => {
-    setIsSendingFile(true);
-    // Simulate file upload
-    setTimeout(() => {
-      const fileMessage = {
-        id: Date.now().toString(),
-        text: 'CV_John_Smith_Updated.pdf',
-        timestamp: new Date().toISOString().slice(0, 16).replace('T', ' '),
+  const getFileType = (url, mimeType, fileName) => {
+    const ext = fileName?.split('.').pop()?.toLowerCase() || url?.split('.').pop()?.toLowerCase() || '';
+    const mime = mimeType?.toLowerCase() || '';
+
+    if (mime.includes('image') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) {
+      return 'image';
+    }
+    if (mime.includes('pdf') || ext === 'pdf') {
+      return 'pdf';
+    }
+    if (
+      mime.includes('document') ||
+      mime.includes('word') ||
+      mime.includes('text') ||
+      ['doc', 'docx', 'txt', 'rtf'].includes(ext)
+    ) {
+      return 'document';
+    }
+    return 'unknown';
+  };
+
+  const handleFileOpen = async (item) => {
+    try {
+      const fullUrl =
+        item.fileFullUrl ||
+        (item.fileUrl ? `${apiService.BASE_IMG_URL}/${item.fileUrl}` : null) ||
+        (item.file_url ? `${apiService.BASE_IMG_URL}/${item.file_url}` : null);
+
+      const fileName = item.fileName || item.fileOriginalName || item.file_name || '';
+      const mimeType = item.mimeType || item.mime_type;
+
+      if (!fullUrl) {
+        Alert.alert('Error', 'File URL not found');
+        return;
+      }
+
+      const fileType = getFileType(fullUrl, mimeType, fileName);
+
+      console.log('Opening file:', { fullUrl, fileType, mimeType, fileName });
+
+      if (fileType === 'image') {
+        setViewerFile({
+          type: 'image',
+          url: fullUrl,
+          name: fileName,
+        });
+        setShowFileViewer(true);
+      } else if (fileType === 'pdf') {
+        await WebBrowser.openBrowserAsync(fullUrl);
+      } else if (fileType === 'document' || fileType === 'unknown') {
+        const supported = await Linking.canOpenURL(fullUrl);
+        if (supported) {
+          await Linking.openURL(fullUrl);
+        } else {
+          await WebBrowser.openBrowserAsync(fullUrl);
+        }
+      }
+    } catch (error) {
+      console.error('Error opening file:', error);
+      Alert.alert('Error', 'Failed to open file');
+    }
+  };
+
+  const sendMessage = async () => {
+    if (messageText.trim() && !isBlocked && !isSending) {
+      const tempMessage = {
+        id: 'temp_' + Date.now(),
+        text: messageText.trim(),
+        timestamp: new Date().toISOString(),
         sender: 'user',
-        type: 'file',
-        fileName: 'CV_John_Smith_Updated.pdf',
-        fileSize: '1.2 MB',
-        status: 'sent',
+        type: 'text',
+        status: 'sending',
       };
-      setMessages(prev => [...prev, fileMessage]);
-      setIsSendingFile(false);
+
+      setMessages((prev) => [...prev, tempMessage]);
+      const messageToSend = messageText.trim();
+      setMessageText('');
+
       setTimeout(() => {
         if (flatListRef.current) {
           flatListRef.current.scrollToEnd({ animated: true });
         }
       }, 100);
-    }, 2000);
+
+      try {
+        setIsSending(true);
+        const result = await apiService.sendMessage2(
+          conversationId,
+          messageToSend,
+          'text'
+        );
+
+        if (result.success) {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === tempMessage.id
+                ? { ...result.data.message, sender: 'user' }
+                : msg
+            )
+          );
+        } else {
+          setMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id));
+          Alert.alert('Error', result.message || 'Failed to send message');
+        }
+      } catch (error) {
+        console.error('Error sending message:', error);
+        setMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id));
+        Alert.alert('Error', 'Failed to send message');
+      } finally {
+        setIsSending(false);
+      }
+    }
   };
 
-  const uploadFromCamera = () => {
+  const handleFileUpload = async () => {
+    if (isBlocked || isSendingFile) return;
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.type === 'success' || result.assets?.[0]) {
+        const file = result.assets?.[0] || result;
+        uploadFile(file);
+      }
+    } catch (error) {
+      console.error('Error picking document:', error);
+      Alert.alert('Error', 'Failed to pick document');
+    }
+  };
+
+  const uploadFile = async (file) => {
+    const tempMessage = {
+      id: 'temp_' + Date.now(),
+      text: file.name,
+      timestamp: new Date().toISOString(),
+      sender: 'user',
+      type: 'file',
+      fileName: file.name,
+      fileSize: formatFileSize(file.size),
+      status: 'sending',
+    };
+
+    setMessages((prev) => [...prev, tempMessage]);
     setIsSendingFile(true);
-    // Simulate camera capture and upload
+
     setTimeout(() => {
-      const fileMessage = {
-        id: Date.now().toString(),
-        text: 'CV_Photo_Capture.jpg',
-        timestamp: new Date().toISOString().slice(0, 16).replace('T', ' '),
-        sender: 'user',
-        type: 'file',
-        fileName: 'CV_Photo_Capture.jpg',
-        fileSize: '2.8 MB',
-        status: 'sent',
-      };
-      setMessages(prev => [...prev, fileMessage]);
+      if (flatListRef.current) {
+        flatListRef.current.scrollToEnd({ animated: true });
+      }
+    }, 100);
+
+    try {
+      const result = await apiService.sendMessageWithFile(conversationId, '', file);
+
+      if (result.success) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === tempMessage.id
+              ? { ...result.data.message, sender: 'user' }
+              : msg
+          )
+        );
+      } else {
+        setMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id));
+        Alert.alert('Error', result.message || 'Failed to send file');
+      }
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      setMessages((prev) => prev.filter((msg) => msg.id !== tempMessage.id));
+      Alert.alert('Error', 'Failed to upload file');
+    } finally {
       setIsSendingFile(false);
-      setTimeout(() => {
-        if (flatListRef.current) {
-          flatListRef.current.scrollToEnd({ animated: true });
-        }
-      }, 100);
-    }, 3000);
+    }
+  };
+
+  const formatFileSize = (bytes) => {
+    if (!bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
   };
 
   const handleBlockCompany = () => {
@@ -215,7 +307,7 @@ export default function MessageDetails() {
     setShowOptions(false);
     Alert.alert(
       'Company Blocked',
-      `You have blocked ${companyData.name}. You will no longer receive messages from them.`,
+      `You have blocked ${companyData?.name}. You will no longer receive messages from them.`,
       [{ text: 'OK' }]
     );
   };
@@ -225,30 +317,30 @@ export default function MessageDetails() {
     setShowOptions(false);
     Alert.alert(
       'Report Submitted',
-      `Thank you for reporting ${companyData.name}. We will review your report and take appropriate action.`,
+      `Thank you for reporting ${companyData?.name}. We will review your report and take appropriate action.`,
       [{ text: 'OK' }]
     );
   };
 
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
       minute: '2-digit',
-      hour12: true 
+      hour12: true,
     });
   };
 
-  // Header Component
   const Header = () => (
     <View
       style={{
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+        backgroundColor: theme.colors.background.card,
         paddingHorizontal: theme.spacing.lg,
         paddingVertical: theme.spacing.md,
-        backgroundColor: theme.colors.background.card,
+        paddingTop: Platform.OS === 'ios' ? theme.spacing.xl : theme.spacing.md,
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border.light,
       }}
@@ -257,59 +349,34 @@ export default function MessageDetails() {
         <TouchableOpacity
           onPress={() => router.back()}
           style={{
-            padding: theme.spacing.sm,
-            borderRadius: theme.borderRadius.full,
-            backgroundColor: theme.colors.background.accent,
             marginRight: theme.spacing.md,
+            padding: theme.spacing.xs,
           }}
           activeOpacity={0.7}
         >
-          <Ionicons
-            name="arrow-back"
-            size={20}
-            color={theme.colors.primary.teal}
-          />
+          <Ionicons name="arrow-back" size={24} color={theme.colors.text.primary} />
         </TouchableOpacity>
 
-        <View style={{ position: 'relative', marginRight: theme.spacing.md }}>
-          <View
+        <View
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: theme.borderRadius.full,
+            backgroundColor: theme.colors.primary.teal,
+            justifyContent: 'center',
+            alignItems: 'center',
+            marginRight: theme.spacing.md,
+          }}
+        >
+          <Text
             style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              backgroundColor: theme.colors.background.accent,
-              justifyContent: 'center',
-              alignItems: 'center',
-              borderWidth: 1,
-              borderColor: theme.colors.border.light,
+              fontSize: theme.typography.sizes.base,
+              fontFamily: theme.typography.fonts.bold,
+              color: theme.colors.neutral.white,
             }}
           >
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.bold,
-                color: theme.colors.primary.teal,
-              }}
-            >
-              {companyData.initial}
-            </Text>
-          </View>
-
-          {companyData.isOnline && !isBlocked && (
-            <View
-              style={{
-                position: 'absolute',
-                bottom: 0,
-                right: 0,
-                width: 10,
-                height: 10,
-                borderRadius: 5,
-                backgroundColor: theme.colors.status.success,
-                borderWidth: 2,
-                borderColor: theme.colors.background.card,
-              }}
-            />
-          )}
+            {companyData?.initial || '??'}
+          </Text>
         </View>
 
         <View style={{ flex: 1 }}>
@@ -321,69 +388,68 @@ export default function MessageDetails() {
             }}
             numberOfLines={1}
           >
-            {companyData.name}
+            {companyData?.name || 'Company'}
           </Text>
           <Text
             style={{
               fontSize: theme.typography.sizes.sm,
               fontFamily: theme.typography.fonts.regular,
-              color: isBlocked 
-                ? theme.colors.status.error 
-                : companyData.isOnline 
-                  ? theme.colors.status.success 
-                  : theme.colors.text.tertiary,
+              color: theme.colors.text.secondary,
             }}
           >
-            {isBlocked ? 'Blocked' : companyData.lastSeen}
+            {companyData?.lastSeen || 'Offline'}
           </Text>
         </View>
       </View>
 
       <TouchableOpacity
         onPress={() => setShowOptions(true)}
-        style={{
-          padding: theme.spacing.sm,
-          borderRadius: theme.borderRadius.full,
-          backgroundColor: theme.colors.background.accent,
-        }}
+        style={{ padding: theme.spacing.xs }}
         activeOpacity={0.7}
       >
         <Ionicons
           name="ellipsis-vertical"
           size={20}
-          color={theme.colors.primary.teal}
+          color={theme.colors.text.primary}
         />
       </TouchableOpacity>
     </View>
   );
 
-  // Message Item Component
   const MessageItem = ({ item }) => {
-    const isUser = item.sender === 'user';
-    
+    const isUser = item.sender === 'user' || item.sender === 'candidate';
+    const isFile = item.type === 'file';
+
     return (
       <View
         style={{
+          flexDirection: 'row',
+          justifyContent: isUser ? 'flex-end' : 'flex-start',
           paddingHorizontal: theme.spacing.lg,
-          paddingVertical: theme.spacing.xs,
-          alignItems: isUser ? 'flex-end' : 'flex-start',
+          marginBottom: theme.spacing.md,
         }}
       >
-        <View
+        <TouchableOpacity
+          onPress={() => isFile && handleFileOpen(item)}
+          disabled={!isFile}
+          activeOpacity={isFile ? 0.7 : 1}
           style={{
-            maxWidth: '80%',
-            backgroundColor: isUser 
-              ? theme.colors.primary.teal 
+            maxWidth: width * 0.75,
+            backgroundColor: isUser
+              ? theme.colors.primary.teal
               : theme.colors.background.card,
             borderRadius: theme.borderRadius.lg,
             padding: theme.spacing.md,
-            borderWidth: isUser ? 0 : 1,
-            borderColor: theme.colors.border.light,
-            borderTopRightRadius: isUser ? theme.borderRadius.sm : theme.borderRadius.lg,
-            borderTopLeftRadius: isUser ? theme.borderRadius.lg : theme.borderRadius.sm,
+            borderBottomRightRadius: isUser ? 4 : theme.borderRadius.lg,
+            borderBottomLeftRadius: isUser ? theme.borderRadius.lg : 4,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.1,
+            shadowRadius: 2,
+            elevation: 2,
           }}
         >
-          {item.type === 'file' ? (
+          {isFile ? (
             <View>
               <View
                 style={{
@@ -394,30 +460,48 @@ export default function MessageDetails() {
               >
                 <Ionicons
                   name="document-attach"
-                  size={18}
+                  size={20}
                   color={isUser ? theme.colors.neutral.white : theme.colors.primary.teal}
-                  style={{ marginRight: theme.spacing.xs }}
+                  style={{ marginRight: theme.spacing.sm }}
                 />
                 <Text
                   style={{
-                    fontSize: theme.typography.sizes.sm,
-                    fontFamily: theme.typography.fonts.semiBold,
-                    color: isUser ? theme.colors.neutral.white : theme.colors.text.primary,
+                    fontSize: theme.typography.sizes.base,
+                    fontFamily: theme.typography.fonts.medium,
+                    color: isUser
+                      ? theme.colors.neutral.white
+                      : theme.colors.text.primary,
                     flex: 1,
                   }}
                   numberOfLines={1}
                 >
-                  {item.fileName}
+                  {item.fileName || item.text}
                 </Text>
               </View>
+              {item.fileSize && (
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.regular,
+                    color: isUser
+                      ? 'rgba(255, 255, 255, 0.8)'
+                      : theme.colors.text.secondary,
+                    marginBottom: theme.spacing.xs,
+                  }}
+                >
+                  {item.fileSize}
+                </Text>
+              )}
               <Text
                 style={{
                   fontSize: theme.typography.sizes.xs,
-                  fontFamily: theme.typography.fonts.regular,
-                  color: isUser ? 'rgba(255,255,255,0.8)' : theme.colors.text.tertiary,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: isUser
+                    ? 'rgba(255, 255, 255, 0.9)'
+                    : theme.colors.primary.teal,
                 }}
               >
-                {item.fileSize}
+                Tap to view
               </Text>
             </View>
           ) : (
@@ -432,51 +516,62 @@ export default function MessageDetails() {
               {item.text}
             </Text>
           )}
-        </View>
 
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            marginTop: theme.spacing.xs,
-            gap: theme.spacing.xs,
-          }}
-        >
-          <Text
+          <View
             style={{
-              fontSize: theme.typography.sizes.xs,
-              fontFamily: theme.typography.fonts.regular,
-              color: theme.colors.text.tertiary,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: theme.spacing.xs,
             }}
           >
-            {formatTime(item.timestamp)}
-          </Text>
-          
-          {isUser && (
-            <Ionicons
-              name={
-                item.status === 'sent' ? 'checkmark' :
-                item.status === 'delivered' ? 'checkmark-done-outline' :
-                'checkmark-done'
-              }
-              size={12}
-              color={
-                item.status === 'read' ? theme.colors.primary.teal : theme.colors.text.tertiary
-              }
-            />
-          )}
-        </View>
+            <Text
+              style={{
+                fontSize: theme.typography.sizes.xs,
+                fontFamily: theme.typography.fonts.regular,
+                color: isUser
+                  ? 'rgba(255, 255, 255, 0.8)'
+                  : theme.colors.text.tertiary,
+              }}
+            >
+              {formatTime(item.timestamp)}
+            </Text>
+
+            {isUser && (
+              <View style={{ marginLeft: theme.spacing.xs }}>
+                {item.status === 'sending' ? (
+                  <ActivityIndicator
+                    size="small"
+                    color="rgba(255, 255, 255, 0.8)"
+                  />
+                ) : item.status === 'read' ? (
+                  <Ionicons
+                    name="checkmark-done"
+                    size={14}
+                    color="rgba(255, 255, 255, 0.8)"
+                  />
+                ) : (
+                  <Ionicons
+                    name="checkmark"
+                    size={14}
+                    color="rgba(255, 255, 255, 0.8)"
+                  />
+                )}
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
       </View>
     );
   };
 
-  // Typing Indicator
   const TypingIndicator = () => (
     <View
       style={{
+        flexDirection: 'row',
+        justifyContent: 'flex-start',
         paddingHorizontal: theme.spacing.lg,
-        paddingVertical: theme.spacing.xs,
-        alignItems: 'flex-start',
+        marginBottom: theme.spacing.md,
       }}
     >
       <View
@@ -484,52 +579,114 @@ export default function MessageDetails() {
           backgroundColor: theme.colors.background.card,
           borderRadius: theme.borderRadius.lg,
           padding: theme.spacing.md,
-          borderWidth: 1,
-          borderColor: theme.colors.border.light,
-          borderTopLeftRadius: theme.borderRadius.sm,
+          borderBottomLeftRadius: 4,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing.xs,
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
-            {[0, 1, 2].map((index) => (
-              <View
-                key={index}
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: 3,
-                  backgroundColor: theme.colors.text.tertiary,
-                  opacity: 0.6,
-                }}
-              />
-            ))}
-          </View>
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.sm,
-              fontFamily: theme.typography.fonts.regular,
-              color: theme.colors.text.tertiary,
-              marginLeft: theme.spacing.sm,
-            }}
-          >
-            typing...
-          </Text>
-        </View>
+        <View
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: theme.colors.text.tertiary,
+          }}
+        />
+        <View
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: theme.colors.text.tertiary,
+          }}
+        />
+        <View
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: theme.colors.text.tertiary,
+          }}
+        />
       </View>
     </View>
   );
 
-  // Options Modal
+  const FileViewerModal = () => (
+    <Modal
+      visible={showFileViewer}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowFileViewer(false)}
+    >
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.95)',
+        }}
+      >
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: theme.spacing.lg,
+            paddingTop: Platform.OS === 'ios' ? theme.spacing.xxl : theme.spacing.lg,
+            paddingBottom: theme.spacing.md,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text
+              style={{
+                fontSize: theme.typography.sizes.base,
+                fontFamily: theme.typography.fonts.medium,
+                color: theme.colors.neutral.white,
+              }}
+              numberOfLines={1}
+            >
+              {viewerFile?.name || 'File'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => setShowFileViewer(false)}
+            style={{
+              padding: theme.spacing.sm,
+              marginLeft: theme.spacing.md,
+            }}
+          >
+            <Ionicons name="close" size={28} color={theme.colors.neutral.white} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+          maximumZoomScale={3}
+          minimumZoomScale={1}
+        >
+          {viewerFile?.type === 'image' && (
+            <Image
+              source={{ uri: viewerFile.url }}
+              style={{
+                width: width,
+                height: height * 0.8,
+              }}
+              resizeMode="contain"
+            />
+          )}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+
   const OptionsModal = () => (
     <Modal
       visible={showOptions}
-      transparent={true}
+      transparent
       animationType="fade"
       onRequestClose={() => setShowOptions(false)}
     >
@@ -537,9 +694,7 @@ export default function MessageDetails() {
         style={{
           flex: 1,
           backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          justifyContent: 'center',
-          alignItems: 'center',
-          paddingHorizontal: theme.spacing.lg,
+          justifyContent: 'flex-end',
         }}
         activeOpacity={1}
         onPress={() => setShowOptions(false)}
@@ -547,29 +702,26 @@ export default function MessageDetails() {
         <View
           style={{
             backgroundColor: theme.colors.background.card,
-            borderRadius: theme.borderRadius.xl,
-            width: '100%',
-            maxWidth: 300,
-            overflow: 'hidden',
+            borderTopLeftRadius: theme.borderRadius.xl,
+            borderTopRightRadius: theme.borderRadius.xl,
+            paddingBottom:
+              Platform.OS === 'ios' ? theme.spacing.xl : theme.spacing.lg,
           }}
         >
           <View
             style={{
-              padding: theme.spacing.lg,
-              borderBottomWidth: 1,
-              borderBottomColor: theme.colors.border.light,
+              alignItems: 'center',
+              paddingVertical: theme.spacing.md,
             }}
           >
-            <Text
+            <View
               style={{
-                fontSize: theme.typography.sizes.md,
-                fontFamily: theme.typography.fonts.semiBold,
-                color: theme.colors.text.primary,
-                textAlign: 'center',
+                width: 40,
+                height: 4,
+                backgroundColor: theme.colors.neutral.mediumGray,
+                borderRadius: 2,
               }}
-            >
-              Company Options
-            </Text>
+            />
           </View>
 
           <TouchableOpacity
@@ -580,23 +732,22 @@ export default function MessageDetails() {
             style={{
               flexDirection: 'row',
               alignItems: 'center',
-              padding: theme.spacing.lg,
-              borderBottomWidth: 1,
-              borderBottomColor: theme.colors.border.light,
+              paddingHorizontal: theme.spacing.lg,
+              paddingVertical: theme.spacing.md,
             }}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
             <Ionicons
               name="ban-outline"
-              size={20}
+              size={24}
               color={theme.colors.status.error}
-              style={{ marginRight: theme.spacing.md }}
             />
             <Text
               style={{
+                marginLeft: theme.spacing.md,
                 fontSize: theme.typography.sizes.base,
                 fontFamily: theme.typography.fonts.medium,
-                color: theme.colors.status.error,
+                color: theme.colors.text.primary,
               }}
             >
               Block Company
@@ -611,21 +762,22 @@ export default function MessageDetails() {
             style={{
               flexDirection: 'row',
               alignItems: 'center',
-              padding: theme.spacing.lg,
+              paddingHorizontal: theme.spacing.lg,
+              paddingVertical: theme.spacing.md,
             }}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
             <Ionicons
               name="flag-outline"
-              size={20}
+              size={24}
               color={theme.colors.status.warning}
-              style={{ marginRight: theme.spacing.md }}
             />
             <Text
               style={{
+                marginLeft: theme.spacing.md,
                 fontSize: theme.typography.sizes.base,
                 fontFamily: theme.typography.fonts.medium,
-                color: theme.colors.status.warning,
+                color: theme.colors.text.primary,
               }}
             >
               Report Company
@@ -636,12 +788,11 @@ export default function MessageDetails() {
     </Modal>
   );
 
-  // Block Modal
   const BlockModal = () => (
     <Modal
       visible={showBlockModal}
-      transparent={true}
-      animationType="slide"
+      transparent
+      animationType="fade"
       onRequestClose={() => setShowBlockModal(false)}
     >
       <View
@@ -650,60 +801,57 @@ export default function MessageDetails() {
           backgroundColor: 'rgba(0, 0, 0, 0.5)',
           justifyContent: 'center',
           alignItems: 'center',
-          paddingHorizontal: theme.spacing.lg,
+          paddingHorizontal: theme.spacing.xl,
         }}
       >
         <View
           style={{
             backgroundColor: theme.colors.background.card,
             borderRadius: theme.borderRadius.xl,
+            padding: theme.spacing.xl,
             width: '100%',
             maxWidth: 400,
-            padding: theme.spacing.xl,
           }}
         >
-          <View style={{ alignItems: 'center', marginBottom: theme.spacing.lg }}>
-            <View
-              style={{
-                width: 60,
-                height: 60,
-                borderRadius: 30,
-                backgroundColor: theme.colors.status.error,
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginBottom: theme.spacing.md,
-              }}
-            >
-              <Ionicons
-                name="ban"
-                size={28}
-                color={theme.colors.neutral.white}
-              />
-            </View>
-            
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.lg,
-                fontFamily: theme.typography.fonts.bold,
-                color: theme.colors.text.primary,
-                marginBottom: theme.spacing.xs,
-                textAlign: 'center',
-              }}
-            >
-              Block {companyData.name}?
-            </Text>
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.base,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
-                textAlign: 'center',
-                lineHeight: theme.typography.sizes.base * 1.4,
-              }}
-            >
-              You will no longer receive messages from this company. They won't be notified that you blocked them.
-            </Text>
+          <View
+            style={{
+              width: 60,
+              height: 60,
+              borderRadius: 30,
+              backgroundColor: theme.colors.status.errorLight,
+              justifyContent: 'center',
+              alignItems: 'center',
+              alignSelf: 'center',
+              marginBottom: theme.spacing.lg,
+            }}
+          >
+            <Ionicons name="ban" size={32} color={theme.colors.status.error} />
           </View>
+
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.xl,
+              fontFamily: theme.typography.fonts.bold,
+              color: theme.colors.text.primary,
+              textAlign: 'center',
+              marginBottom: theme.spacing.sm,
+            }}
+          >
+            Block {companyData?.name}?
+          </Text>
+
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.base,
+              fontFamily: theme.typography.fonts.regular,
+              color: theme.colors.text.secondary,
+              textAlign: 'center',
+              marginBottom: theme.spacing.xl,
+              lineHeight: theme.typography.sizes.base * 1.4,
+            }}
+          >
+            They won't be able to send you messages or view your profile.
+          </Text>
 
           <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
             <TouchableOpacity
@@ -755,212 +903,214 @@ export default function MessageDetails() {
     </Modal>
   );
 
-  // Report Modal
-  const ReportModal = () => {
-    const [selectedReason, setSelectedReason] = useState('');
-    const reportReasons = [
-      'Inappropriate behavior',
-      'Spam or unwanted messages',
-      'Fake job posting',
-      'Harassment',
-      'Scam or fraud',
-      'Other'
-    ];
-
-    return (
-      <Modal
-        visible={showReportModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowReportModal(false)}
+  const ReportModal = () => (
+    <Modal
+      visible={showReportModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowReportModal(false)}
+    >
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: theme.spacing.xl,
+        }}
       >
         <View
           style={{
-            flex: 1,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            justifyContent: 'center',
-            alignItems: 'center',
-            paddingHorizontal: theme.spacing.lg,
+            backgroundColor: theme.colors.background.card,
+            borderRadius: theme.borderRadius.xl,
+            padding: theme.spacing.xl,
+            width: '100%',
+            maxWidth: 400,
           }}
         >
           <View
             style={{
-              backgroundColor: theme.colors.background.card,
-              borderRadius: theme.borderRadius.xl,
-              width: '100%',
-              maxWidth: 400,
-              padding: theme.spacing.xl,
-              maxHeight: '80%',
+              width: 60,
+              height: 60,
+              borderRadius: 30,
+              backgroundColor: theme.colors.status.warningLight,
+              justifyContent: 'center',
+              alignItems: 'center',
+              alignSelf: 'center',
+              marginBottom: theme.spacing.lg,
             }}
           >
-            <View style={{ alignItems: 'center', marginBottom: theme.spacing.lg }}>
-              <View
+            <Ionicons name="flag" size={32} color={theme.colors.status.warning} />
+          </View>
+
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.xl,
+              fontFamily: theme.typography.fonts.bold,
+              color: theme.colors.text.primary,
+              textAlign: 'center',
+              marginBottom: theme.spacing.sm,
+            }}
+          >
+            Report {companyData?.name}
+          </Text>
+
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.base,
+              fontFamily: theme.typography.fonts.regular,
+              color: theme.colors.text.secondary,
+              textAlign: 'center',
+              marginBottom: theme.spacing.lg,
+            }}
+          >
+            Please select a reason for reporting
+          </Text>
+
+          <View style={{ marginBottom: theme.spacing.xl }}>
+            {[
+              'Spam or misleading',
+              'Inappropriate content',
+              'Harassment',
+              'Scam or fraud',
+              'Other',
+            ].map((reason) => (
+              <TouchableOpacity
+                key={reason}
+                onPress={() => setSelectedReason(reason)}
                 style={{
-                  width: 60,
-                  height: 60,
-                  borderRadius: 30,
-                  backgroundColor: theme.colors.status.warning,
-                  justifyContent: 'center',
+                  flexDirection: 'row',
                   alignItems: 'center',
-                  marginBottom: theme.spacing.md,
+                  paddingVertical: theme.spacing.md,
+                  borderBottomWidth: 1,
+                  borderBottomColor: theme.colors.border.light,
                 }}
+                activeOpacity={0.7}
               >
-                <Ionicons
-                  name="flag"
-                  size={28}
-                  color={theme.colors.neutral.white}
-                />
-              </View>
-              
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.lg,
-                  fontFamily: theme.typography.fonts.bold,
-                  color: theme.colors.text.primary,
-                  marginBottom: theme.spacing.xs,
-                  textAlign: 'center',
-                }}
-              >
-                Report {companyData.name}
-              </Text>
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.sm,
-                  fontFamily: theme.typography.fonts.regular,
-                  color: theme.colors.text.secondary,
-                  textAlign: 'center',
-                }}
-              >
-                Help us understand what's happening
-              </Text>
-            </View>
-
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.medium,
-                color: theme.colors.text.primary,
-                marginBottom: theme.spacing.md,
-              }}
-            >
-              Why are you reporting this company?
-            </Text>
-
-            <View style={{ marginBottom: theme.spacing.lg }}>
-              {reportReasons.map((reason, index) => (
-                <TouchableOpacity
-                  key={index}
-                  onPress={() => setSelectedReason(reason)}
+                <View
                   style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingVertical: theme.spacing.sm,
-                    borderBottomWidth: index < reportReasons.length - 1 ? 1 : 0,
-                    borderBottomColor: theme.colors.border.light,
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View
-                    style={{
-                      width: 20,
-                      height: 20,
-                      borderRadius: 10,
-                      borderWidth: 2,
-                      borderColor: selectedReason === reason 
-                        ? theme.colors.primary.teal 
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    borderWidth: 2,
+                    borderColor:
+                      selectedReason === reason
+                        ? theme.colors.primary.teal
                         : theme.colors.border.medium,
-                      backgroundColor: selectedReason === reason 
-                        ? theme.colors.primary.teal 
+                    backgroundColor:
+                      selectedReason === reason
+                        ? theme.colors.primary.teal
                         : 'transparent',
-                      marginRight: theme.spacing.md,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                    }}
-                  >
-                    {selectedReason === reason && (
-                      <View
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: 4,
-                          backgroundColor: theme.colors.neutral.white,
-                        }}
-                      />
-                    )}
-                  </View>
-                  <Text
-                    style={{
-                      fontSize: theme.typography.sizes.base,
-                      fontFamily: theme.typography.fonts.regular,
-                      color: theme.colors.text.primary,
-                    }}
-                  >
-                    {reason}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
-              <TouchableOpacity
-                onPress={() => setShowReportModal(false)}
-                style={{
-                  flex: 1,
-                  backgroundColor: theme.colors.neutral.lightGray,
-                  borderRadius: theme.borderRadius.lg,
-                  paddingVertical: theme.spacing.md,
-                  alignItems: 'center',
-                }}
-                activeOpacity={0.8}
-              >
+                    marginRight: theme.spacing.md,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                >
+                  {selectedReason === reason && (
+                    <View
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: theme.colors.neutral.white,
+                      }}
+                    />
+                  )}
+                </View>
                 <Text
                   style={{
                     fontSize: theme.typography.sizes.base,
-                    fontFamily: theme.typography.fonts.semiBold,
-                    color: theme.colors.text.secondary,
+                    fontFamily: theme.typography.fonts.regular,
+                    color: theme.colors.text.primary,
                   }}
                 >
-                  Cancel
+                  {reason}
                 </Text>
               </TouchableOpacity>
+            ))}
+          </View>
 
-              <TouchableOpacity
-                onPress={handleReportCompany}
-                disabled={!selectedReason}
+          <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+            <TouchableOpacity
+              onPress={() => setShowReportModal(false)}
+              style={{
+                flex: 1,
+                backgroundColor: theme.colors.neutral.lightGray,
+                borderRadius: theme.borderRadius.lg,
+                paddingVertical: theme.spacing.md,
+                alignItems: 'center',
+              }}
+              activeOpacity={0.8}
+            >
+              <Text
                 style={{
-                  flex: 1,
-                  backgroundColor: selectedReason 
-                    ? theme.colors.status.warning 
-                    : theme.colors.neutral.mediumGray,
-                  borderRadius: theme.borderRadius.lg,
-                  paddingVertical: theme.spacing.md,
-                  alignItems: 'center',
+                  fontSize: theme.typography.sizes.base,
+                  fontFamily: theme.typography.fonts.semiBold,
+                  color: theme.colors.text.secondary,
                 }}
-                activeOpacity={0.9}
               >
-                <Text
-                  style={{
-                    fontSize: theme.typography.sizes.base,
-                    fontFamily: theme.typography.fonts.semiBold,
-                    color: theme.colors.neutral.white,
-                  }}
-                >
-                  Report
-                </Text>
-              </TouchableOpacity>
-            </View>
+                Cancel
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleReportCompany}
+              disabled={!selectedReason}
+              style={{
+                flex: 1,
+                backgroundColor: selectedReason
+                  ? theme.colors.status.warning
+                  : theme.colors.neutral.mediumGray,
+                borderRadius: theme.borderRadius.lg,
+                paddingVertical: theme.spacing.md,
+                alignItems: 'center',
+              }}
+              activeOpacity={0.9}
+            >
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.base,
+                  fontFamily: theme.typography.fonts.semiBold,
+                  color: theme.colors.neutral.white,
+                }}
+              >
+                Report
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </View>
+    </Modal>
+  );
+
+  if (isLoading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: theme.colors.background.primary,
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
+        <ActivityIndicator size="large" color={theme.colors.primary.teal} />
+        <Text
+          style={{
+            marginTop: theme.spacing.md,
+            fontSize: theme.typography.sizes.base,
+            fontFamily: theme.typography.fonts.medium,
+            color: theme.colors.text.secondary,
+          }}
+        >
+          Loading messages...
+        </Text>
+      </View>
     );
-  };
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background.primary }}>
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor={theme.colors.background.card}
-      />
+      <StatusBar barStyle="dark-content" backgroundColor={theme.colors.background.card} />
 
       <Header />
 
@@ -969,7 +1119,6 @@ export default function MessageDetails() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        {/* Messages List */}
         <FlatList
           ref={flatListRef}
           data={messages}
@@ -981,7 +1130,6 @@ export default function MessageDetails() {
           ListFooterComponent={isTyping ? <TypingIndicator /> : null}
         />
 
-        {/* Input Area */}
         {!isBlocked && (
           <View
             style={{
@@ -999,29 +1147,29 @@ export default function MessageDetails() {
                 gap: theme.spacing.sm,
               }}
             >
-              {/* File Upload Button */}
               <TouchableOpacity
                 onPress={handleFileUpload}
                 disabled={isSendingFile}
                 style={{
                   padding: theme.spacing.sm,
                   borderRadius: theme.borderRadius.full,
-                  backgroundColor: isSendingFile 
+                  backgroundColor: isSendingFile
                     ? theme.colors.neutral.mediumGray
                     : theme.colors.background.accent,
                 }}
                 activeOpacity={0.7}
               >
                 <Ionicons
-                  name={isSendingFile ? "hourglass-outline" : "attach-outline"}
+                  name={isSendingFile ? 'hourglass-outline' : 'attach-outline'}
                   size={20}
-                  color={isSendingFile 
-                    ? theme.colors.neutral.white
-                    : theme.colors.primary.teal}
+                  color={
+                    isSendingFile
+                      ? theme.colors.neutral.white
+                      : theme.colors.primary.teal
+                  }
                 />
               </TouchableOpacity>
 
-              {/* Text Input */}
               <View
                 style={{
                   flex: 1,
@@ -1047,10 +1195,9 @@ export default function MessageDetails() {
                 />
               </View>
 
-              {/* Send Button */}
               <TouchableOpacity
                 onPress={sendMessage}
-                disabled={!messageText.trim()}
+                disabled={!messageText.trim() || isSending}
                 style={{
                   padding: theme.spacing.sm,
                   borderRadius: theme.borderRadius.full,
@@ -1059,26 +1206,26 @@ export default function MessageDetails() {
                 activeOpacity={0.9}
               >
                 <LinearGradient
-                  colors={messageText.trim() 
-                    ? [theme.colors.primary.teal, theme.colors.secondary.darkTeal]
-                    : [theme.colors.neutral.mediumGray, theme.colors.neutral.mediumGray]}
+                  colors={
+                    messageText.trim() && !isSending
+                      ? [theme.colors.primary.teal, theme.colors.secondary.darkTeal]
+                      : [
+                          theme.colors.neutral.mediumGray,
+                          theme.colors.neutral.mediumGray,
+                        ]
+                  }
                   style={{
                     padding: theme.spacing.sm,
                     borderRadius: theme.borderRadius.full,
                   }}
                 >
-                  <Ionicons
-                    name="send"
-                    size={18}
-                    color={theme.colors.neutral.white}
-                  />
+                  <Ionicons name="send" size={18} color={theme.colors.neutral.white} />
                 </LinearGradient>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* Blocked State */}
         {isBlocked && (
           <View
             style={{
@@ -1109,6 +1256,7 @@ export default function MessageDetails() {
         )}
       </KeyboardAvoidingView>
 
+      <FileViewerModal />
       <OptionsModal />
       <BlockModal />
       <ReportModal />

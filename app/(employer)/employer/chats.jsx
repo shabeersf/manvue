@@ -1,159 +1,96 @@
+import apiService from '@/services/apiService';
 import theme from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-    FlatList,
-    RefreshControl,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  RefreshControl,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 export default function EmployerMessages() {
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'unread', 'interviews', 'proposals'
+  
+  // Dynamic data from API
+  const [messages, setMessages] = useState([]);
+  const [stats, setStats] = useState({
+    all: 0,
+    unread: 0,
+    interviews: 0,
+    proposals: 0,
+  });
 
-  // Mock messages data
-  const [messages] = useState([
-    {
-      id: '1',
-      candidateName: 'John Smith',
-      candidateInitials: 'JS',
-      position: 'Senior React Developer',
-      lastMessage: 'Thank you for considering my application. I am very excited about this opportunity...',
-      timestamp: '5 mins ago',
-      unreadCount: 3,
-      isBlocked: false,
-      status: 'active', // 'active', 'blocked'
-      isOnline: true,
-      messageType: 'text', // 'text', 'file', 'interview'
-      senderType: 'candidate', // 'candidate' or 'company'
-      conversationType: 'proposal', // 'proposal', 'interview', 'general'
-      candidateExperience: '5 years',
-      appliedTime: '2 hours ago',
-    },
-    {
-      id: '2',
-      candidateName: 'Sarah Johnson',
-      candidateInitials: 'SJ',
-      position: 'Frontend Developer',
-      lastMessage: 'I have attached my updated portfolio. Looking forward to hearing from you.',
-      timestamp: '1 hour ago',
-      unreadCount: 1,
-      isBlocked: false,
-      status: 'active',
-      isOnline: false,
-      messageType: 'file',
-      senderType: 'candidate',
-      conversationType: 'proposal',
-      candidateExperience: '3 years',
-      appliedTime: '5 hours ago',
-    },
-    {
-      id: '3',
-      candidateName: 'Mike Chen',
-      candidateInitials: 'MC',
-      position: 'Full Stack Developer',
-      lastMessage: 'You: Great! Let\'s schedule the interview for tomorrow at 2 PM.',
-      timestamp: '3 hours ago',
-      unreadCount: 0,
-      isBlocked: false,
-      status: 'active',
-      isOnline: true,
-      messageType: 'text',
-      senderType: 'company',
-      conversationType: 'interview',
-      candidateExperience: '4 years',
-      appliedTime: '1 day ago',
-    },
-    {
-      id: '4',
-      candidateName: 'Priya Sharma',
-      candidateInitials: 'PS',
-      position: 'React Native Developer',
-      lastMessage: 'I would like to know more about the team structure and growth opportunities.',
-      timestamp: '6 hours ago',
-      unreadCount: 2,
-      isBlocked: false,
-      status: 'active',
-      isOnline: false,
-      messageType: 'text',
-      senderType: 'candidate',
-      conversationType: 'general',
-      candidateExperience: '3.5 years',
-      appliedTime: '3 hours ago',
-    },
-    {
-      id: '5',
-      candidateName: 'David Wilson',
-      candidateInitials: 'DW',
-      position: 'Backend Developer',
-      lastMessage: 'Thank you for the interview opportunity. I have some questions about...',
-      timestamp: '1 day ago',
-      unreadCount: 0,
-      isBlocked: true,
-      status: 'blocked',
-      isOnline: false,
-      messageType: 'text',
-      senderType: 'candidate',
-      conversationType: 'interview',
-      candidateExperience: '6 years',
-      appliedTime: '2 days ago',
-    },
-  ]);
+  // Fetch conversations from API
+  const fetchConversations = async (showLoader = true, isRefresh = false) => {
+    try {
+      if (showLoader && !isRefresh) {
+        setLoading(true);
+      }
 
-  const onRefresh = () => {
+      const result = await apiService.getEmployerConversations({
+        filter: activeFilter,
+        search_query: searchQuery.trim(),
+      });
+
+      if (result.success) {
+        setMessages(result.data.conversations || []);
+        setStats(result.data.stats || {
+          all: 0,
+          unread: 0,
+          interviews: 0,
+          proposals: 0,
+        });
+      } else {
+        Alert.alert('Error', result.message || 'Failed to fetch conversations');
+      }
+    } catch (error) {
+      console.error('Error fetching conversations:', error);
+      Alert.alert('Error', 'Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
+      if (isRefresh) {
+        setRefreshing(false);
+      }
+    }
+  };
+
+  // Load data on mount and when filters change
+  useEffect(() => {
+    fetchConversations();
+  }, [activeFilter]);
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery.trim() || searchQuery === '') {
+        fetchConversations(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 2000);
-  };
+    fetchConversations(false, true);
+  }, [activeFilter, searchQuery]);
 
-  // Filter messages based on active filter and search query
-  const getFilteredMessages = () => {
-    let filtered = messages;
-
-    // Apply status filter
-    switch (activeFilter) {
-      case 'unread':
-        filtered = filtered.filter(msg => msg.unreadCount > 0 && !msg.isBlocked);
-        break;
-      case 'interviews':
-        filtered = filtered.filter(msg => msg.conversationType === 'interview' && !msg.isBlocked);
-        break;
-      case 'proposals':
-        filtered = filtered.filter(msg => msg.conversationType === 'proposal' && !msg.isBlocked);
-        break;
-      default:
-        filtered = filtered.filter(msg => !msg.isBlocked);
-    }
-
-    // Apply search filter
-    if (searchQuery.trim()) {
-      filtered = filtered.filter(msg =>
-        msg.candidateName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        msg.position.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        msg.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    return filtered;
-  };
-
-  // Get filter stats
-  const getFilterStats = () => {
-    return {
-      all: messages.filter(m => !m.isBlocked).length,
-      unread: messages.filter(m => m.unreadCount > 0 && !m.isBlocked).length,
-      interviews: messages.filter(m => m.conversationType === 'interview' && !m.isBlocked).length,
-      proposals: messages.filter(m => m.conversationType === 'proposal' && !m.isBlocked).length,
-    };
-  };
-
-  const stats = getFilterStats();
+  // Filter buttons data
+  const filters = [
+    { key: 'all', label: 'All', count: stats.all },
+    { key: 'unread', label: 'Unread', count: stats.unread },
+    { key: 'interviews', label: 'Interviews', count: stats.interviews },
+    { key: 'proposals', label: 'Proposals', count: stats.proposals },
+  ];
 
   // Header Component
   const Header = () => (
@@ -202,7 +139,8 @@ export default function EmployerMessages() {
           <TouchableOpacity
             onPress={() => {
               // Navigate to blocked conversations or show blocked filter
-              setActiveFilter('blocked');
+              // You can implement this feature later
+              Alert.alert('Info', 'Blocked conversations feature coming soon');
             }}
             style={{
               padding: theme.spacing.sm,
@@ -241,22 +179,23 @@ export default function EmployerMessages() {
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Search conversations..."
+          placeholder="Search candidates or messages..."
           placeholderTextColor={theme.colors.text.placeholder}
           style={{
             flex: 1,
-            fontSize: theme.typography.sizes.base,
+            fontSize: theme.typography.sizes.sm,
             fontFamily: theme.typography.fonts.regular,
             color: theme.colors.text.primary,
+            paddingVertical: 0,
           }}
         />
         {searchQuery.length > 0 && (
           <TouchableOpacity
             onPress={() => setSearchQuery('')}
-            style={{ padding: theme.spacing.xs }}
+            activeOpacity={0.7}
           >
             <Ionicons
-              name="close"
+              name="close-circle"
               size={16}
               color={theme.colors.text.tertiary}
             />
@@ -265,65 +204,57 @@ export default function EmployerMessages() {
       </View>
 
       {/* Filter Tabs */}
-      <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
-        {[
-          { id: 'all', label: 'All', count: stats.all },
-          { id: 'unread', label: 'Unread', count: stats.unread },
-          { id: 'proposals', label: 'Proposals', count: stats.proposals },
-          { id: 'interviews', label: 'Interviews', count: stats.interviews },
-        ].map((filter) => (
+      <View
+        style={{
+          flexDirection: 'row',
+          gap: theme.spacing.xs,
+        }}
+      >
+        {filters.map((filter) => (
           <TouchableOpacity
-            key={filter.id}
-            onPress={() => setActiveFilter(filter.id)}
+            key={filter.key}
+            onPress={() => setActiveFilter(filter.key)}
             style={{
-              paddingHorizontal: theme.spacing.md,
+              flex: 1,
               paddingVertical: theme.spacing.sm,
-              borderRadius: theme.borderRadius.full,
-              backgroundColor: activeFilter === filter.id 
-                ? theme.colors.primary.teal 
-                : theme.colors.background.accent,
-              flexDirection: 'row',
+              borderRadius: theme.borderRadius.md,
+              backgroundColor:
+                activeFilter === filter.key
+                  ? theme.colors.primary.teal
+                  : theme.colors.neutral.lightGray,
               alignItems: 'center',
             }}
             activeOpacity={0.8}
           >
             <Text
               style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: activeFilter === filter.id 
-                  ? theme.typography.fonts.semiBold 
-                  : theme.typography.fonts.medium,
-                color: activeFilter === filter.id 
-                  ? theme.colors.neutral.white 
-                  : theme.colors.text.secondary,
+                fontSize: theme.typography.sizes.xs,
+                fontFamily:
+                  activeFilter === filter.key
+                    ? theme.typography.fonts.semiBold
+                    : theme.typography.fonts.medium,
+                color:
+                  activeFilter === filter.key
+                    ? theme.colors.neutral.white
+                    : theme.colors.text.secondary,
               }}
             >
               {filter.label}
             </Text>
             {filter.count > 0 && (
-              <View
+              <Text
                 style={{
-                  backgroundColor: activeFilter === filter.id 
-                    ? 'rgba(255, 255, 255, 0.3)' 
-                    : theme.colors.primary.teal,
-                  borderRadius: theme.borderRadius.full,
-                  paddingHorizontal: theme.spacing.xs,
-                  paddingVertical: 2,
-                  marginLeft: theme.spacing.xs,
-                  minWidth: 18,
-                  alignItems: 'center',
+                  fontSize: theme.typography.sizes.xs,
+                  fontFamily: theme.typography.fonts.bold,
+                  color:
+                    activeFilter === filter.key
+                      ? theme.colors.neutral.white
+                      : theme.colors.primary.teal,
+                  marginTop: 2,
                 }}
               >
-                <Text
-                  style={{
-                    fontSize: theme.typography.sizes.xs,
-                    fontFamily: theme.typography.fonts.bold,
-                    color: theme.colors.neutral.white,
-                  }}
-                >
-                  {filter.count}
-                </Text>
-              </View>
+                {filter.count}
+              </Text>
             )}
           </TouchableOpacity>
         ))}
@@ -333,95 +264,86 @@ export default function EmployerMessages() {
 
   // Message Item Component
   const MessageItem = ({ item }) => {
-    const getConversationTypeColor = () => {
+    const getConversationTypeIcon = () => {
       switch (item.conversationType) {
-        case 'interview': return theme.colors.primary.orange;
-        case 'proposal': return theme.colors.primary.teal;
-        default: return theme.colors.text.tertiary;
+        case 'interview':
+          return 'calendar-outline';
+        case 'application':
+          return 'briefcase-outline';
+        default:
+          return 'chatbubble-outline';
       }
     };
 
-    const getConversationTypeIcon = () => {
+    const getConversationTypeColor = () => {
       switch (item.conversationType) {
-        case 'interview': return 'calendar-outline';
-        case 'proposal': return 'briefcase-outline';
-        default: return 'chatbubble-outline';
+        case 'interview':
+          return theme.colors.primary.orange;
+        case 'application':
+          return theme.colors.primary.teal;
+        default:
+          return theme.colors.text.tertiary;
       }
     };
 
     return (
       <TouchableOpacity
-        onPress={() => router.push(`/employer/messages/${item.id}`)}
+        onPress={() => router.push(`/chat/${item.jobseeker_id}/${item.application_id}/${item.conversation_id}`)}
         style={{
           backgroundColor: theme.colors.background.card,
-          paddingHorizontal: theme.spacing.lg,
-          paddingVertical: theme.spacing.md,
-          borderBottomWidth: 1,
-          borderBottomColor: theme.colors.border.light,
-          opacity: item.isBlocked ? 0.6 : 1,
+          marginHorizontal: theme.spacing.md,
+          marginVertical: theme.spacing.xs,
+          borderRadius: theme.borderRadius.lg,
+          ...theme.shadows.sm,
+          borderWidth: 1,
+          borderColor: item.unreadCount > 0 
+            ? theme.colors.primary.teal + '30' 
+            : theme.colors.border.light,
         }}
-        activeOpacity={0.8}
+        activeOpacity={0.7}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {/* Candidate Avatar */}
-          <View style={{ position: 'relative', marginRight: theme.spacing.md }}>
-            <View
+        {/* {console.log("item",item)} */}
+        <View
+          style={{
+            padding: theme.spacing.md,
+            flexDirection: 'row',
+            alignItems: 'center',
+          }}
+        >
+          {/* Avatar */}
+          <View
+            style={{
+              width: 50,
+              height: 50,
+              borderRadius: theme.borderRadius.full,
+              backgroundColor: theme.colors.primary.teal,
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginRight: theme.spacing.md,
+              position: 'relative',
+            }}
+          >
+            <Text
               style={{
-                width: 50,
-                height: 50,
-                borderRadius: 25,
-                backgroundColor: item.unreadCount > 0 
-                  ? theme.colors.primary.teal 
-                  : theme.colors.background.accent,
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderWidth: item.unreadCount > 0 ? 2 : 1,
-                borderColor: item.unreadCount > 0 
-                  ? theme.colors.primary.teal 
-                  : theme.colors.border.light,
+                fontSize: theme.typography.sizes.base,
+                fontFamily: theme.typography.fonts.bold,
+                color: theme.colors.neutral.white,
               }}
             >
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.base,
-                  fontFamily: theme.typography.fonts.bold,
-                  color: item.unreadCount > 0 
-                    ? theme.colors.neutral.white 
-                    : theme.colors.primary.teal,
-                }}
-              >
-                {item.candidateInitials}
-              </Text>
-            </View>
+              {item.candidateInitials}
+            </Text>
 
-            {/* Online status */}
-            {item.isOnline && !item.isBlocked && (
+            {/* Online indicator */}
+            {item.isOnline && (
               <View
                 style={{
                   position: 'absolute',
-                  bottom: 2,
-                  right: 2,
+                  bottom: 0,
+                  right: 0,
                   width: 12,
                   height: 12,
                   borderRadius: 6,
                   backgroundColor: theme.colors.status.success,
-                  borderWidth: 2,
-                  borderColor: theme.colors.background.card,
-                }}
-              />
-            )}
-
-            {/* Blocked indicator */}
-            {item.isBlocked && (
-              <View
-                style={{
-                  position: 'absolute',
-                  bottom: 2,
-                  right: 2,
-                  width: 12,
-                  height: 12,
-                  borderRadius: 6,
-                  backgroundColor: theme.colors.status.error,
                   borderWidth: 2,
                   borderColor: theme.colors.background.card,
                 }}
@@ -647,20 +569,36 @@ export default function EmployerMessages() {
     </View>
   );
 
-  const filteredMessages = getFilteredMessages();
+  // Loading State
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors.background.primary, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={theme.colors.primary.teal} />
+        <Text style={{ 
+          marginTop: theme.spacing.md,
+          fontSize: theme.typography.sizes.base,
+          fontFamily: theme.typography.fonts.medium,
+          color: theme.colors.text.secondary 
+        }}>
+          Loading conversations...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background.primary }}>
       <Header />
       
-      {filteredMessages.length === 0 ? (
+      {messages.length === 0 ? (
         <EmptyState />
       ) : (
         <FlatList
-          data={filteredMessages}
+          data={messages}
           renderItem={({ item }) => <MessageItem item={item} />}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingVertical: theme.spacing.sm }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

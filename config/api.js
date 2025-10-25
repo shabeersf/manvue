@@ -9,6 +9,7 @@ export const API_CONFIG = {
   // API Endpoints
   ENDPOINTS: {
     // Jobseeker endpoints
+    // Jobseeker endpoints
     SIGNUP: "/signup.php",
     LOGIN: "/login.php",
     PROFILE: "/profile.php",
@@ -26,7 +27,18 @@ export const API_CONFIG = {
     GET_COMPANY: "/get-company.php",
     UPDATE_COMPANY: "/update-company.php",
     GET_JOBS: "/get-jobs.php",
+    GET_MATCHING_CANDIDATES: "/get-matching-candidates.php",
+    GET_JOB_BY_ID: "/get-job-by-id.php",
+    UPDATE_JOB: "/update-job.php",
+    DELETE_JOB: "/delete-job.php",
 
+    // Job Proposal Endpoints (NEW - CORRECTED)
+    GET_EMPLOYER_ACTIVE_JOBS: "/get_employer_active_jobs.php",
+    SEND_JOB_PROPOSAL: "/send_job_proposal.php",
+    GET_JOBSEEKER_PROPOSALS: "/get_jobseeker_proposals.php",
+    RESPOND_TO_PROPOSAL: "/respond_to_proposal.php",
+    GET_CANDIDATE_DETAILS: "/get_candidate_details.php",
+    GET_APPLICATION_DETAILS: "/get_application_details",
     // Common endpoints
     JOBS: "/jobs.php",
     APPLICATIONS: "/applications.php",
@@ -37,6 +49,34 @@ export const API_CONFIG = {
     MESSAGES: "/messages.php",
     NOTIFICATIONS: "/notifications.php",
     UPLOAD: "/upload.php",
+
+    // Razorpay Payment endpoints
+    GET_SUBSCRIPTION_PLANS: "/get-subscription-plans.php",
+    CREATE_RAZORPAY_ORDER: "/create-razorpay-order.php",
+    VERIFY_RAZORPAY_PAYMENT: "/verify-razorpay-payment.php",
+    GET_USER_SUBSCRIPTION: "/get-user-subscription.php",
+
+    // Conversation/Chat Endpoints (NEW)
+    GET_EMPLOYER_CONVERSATIONS: "/get_employer_conversations.php",
+    GET_CONVERSATION_DETAILS: "/get_conversation_details.php",
+    SEND_MESSAGE: "/send_message.php",
+    MARK_MESSAGES_READ: "/mark_messages_read.php",
+    BLOCK_CONVERSATION: "/block_conversation.php",
+
+    // Chat/Messaging Endpoints (NEW)
+    GET_CONVERSATION_MESSAGES: "/get_conversation_messages.php",
+    SEND_MESSAGE: "/send_message.php",
+    BLOCK_CONVERSATION: "/block_conversation.php",
+    MARK_MESSAGES_READ: "/mark_messages_read.php",
+    GET_CHAT_ATTACHMENTS: "/get_chat_attachments.php",
+
+    // Conversation List Endpoints (EXISTING - from previous)
+    GET_EMPLOYER_CONVERSATIONS: "/get_employer_conversations.php",
+    GET_JOBSEEKER_CONVERSATIONS: "/get_jobseeker_conversations.php",
+
+    JOBSEEKER_CHAT_LIST: "jobseeker_chat_list.php",
+    GET_CONVERSATION_MESSAGES2: "get_conversation_messages2.php",
+    SEND_MESSAGE2: "send_message2.php",
   },
 
   // Request headers

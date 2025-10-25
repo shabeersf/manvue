@@ -6,10 +6,9 @@ import VerificationModal from "@/components/VerificationModal";
 import apiService from "@/services/apiService";
 import theme from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from 'expo-image-picker';
+import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import * as SecureStore from 'expo-secure-store';
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -32,48 +31,54 @@ export default function Signup() {
   // Form State - Force jobseeker only, no employer option
   const [userType, setUserType] = useState("jobseeker");
   const [formData, setFormData] = useState({
-  // Common fields
-  first_name: "",
-  last_name: "",
-  email: "",
-  phone: "",
-  password: "",
-  confirm_password: "",
-  date_of_birth: "",
-  gender: "",
-  location_city: "",
-  location_state: "",
-  bio: "",
+    // Common fields
+    first_name: "",
+    last_name: "",
+    email: "",
+    phone: "",
+    password: "",
+    confirm_password: "",
+    date_of_birth: "",
+    gender: "",
+    location_city: "",
+    location_state: "",
+    bio: "",
 
-  // Job seeker specific fields
-  current_job_title: "",
-  current_company: "",
-  experience_years: 0,
-  experience_months: 0,
-  current_salary: "",
-  expected_salary: "",
-  notice_period: "",
-  job_type_preference: [],
-  work_mode_preference: [],
-  willing_to_relocate: 0,
-  availability_status: "",
-  linkedin_url: "",
-  github_url: "",
-  portfolio_url: "",
-  profile_visibility: "",
+    // Job seeker specific fields
+    current_job_title: "",
+    current_company: "",
+    experience_years: 0,
+    experience_months: 0,
+    current_salary: "",
+    expected_salary: "",
+    notice_period: "",
+    job_type_preference: [],
+    work_mode_preference: [],
+    willing_to_relocate: 0,
+    availability_status: "",
+    linkedin_url: "",
+    github_url: "",
+    portfolio_url: "",
+    profile_visibility: "",
 
-  // Employer specific fields
-  company_name: "",
-  company_website: "",
-  company_size: "",
-  industry: "",
-  company_type: "",
-  founded_year: '',
-  headquarters_address: "",
-  headquarters_city: "",
-  headquarters_state: "",
-  company_description: "",
-});
+    // Employer specific fields
+    company_name: "",
+    company_website: "",
+    company_size: "",
+    industry: "",
+    company_type: "",
+    founded_year: "",
+    headquarters_address: "",
+    headquarters_city: "",
+    headquarters_state: "",
+    company_description: "",
+    full_address: "",
+    function: "",
+    industry_nature: "",
+    area_of_interest: "",
+    work_type: "",
+    preferred_locations: [],
+  });
 
   const [skills, setSkills] = useState([]);
   const [profileImage, setProfileImage] = useState(null);
@@ -85,7 +90,7 @@ export default function Signup() {
 
   // Email verification state (for new verification-first flow)
   const [showVerificationModal, setShowVerificationModal] = useState(false);
-  const [signupEmail, setSignupEmail] = useState('');
+  const [signupEmail, setSignupEmail] = useState("");
 
   // Dropdown Options
   const genderOptions = [
@@ -155,6 +160,55 @@ export default function Signup() {
     { label: "Other", value: "Other" },
   ];
 
+  const workTypeOptions = [
+    { label: "Full-Time", value: "full_time" },
+    { label: "Part-Time", value: "part_time" },
+    { label: "Contract", value: "contract" },
+    { label: "Freelance", value: "freelance" },
+    { label: "Internship", value: "internship" },
+    { label: "Hybrid", value: "hybrid" },
+  ];
+
+  const functionOptions = [
+    { label: "Software Development", value: "Software Development" },
+    { label: "Data Science & Analytics", value: "Data Science & Analytics" },
+    { label: "DevOps & Cloud", value: "DevOps & Cloud" },
+    { label: "UI/UX Design", value: "UI/UX Design" },
+    { label: "Product Management", value: "Product Management" },
+    { label: "Project Management", value: "Project Management" },
+    { label: "Quality Assurance", value: "Quality Assurance" },
+    { label: "Sales & Marketing", value: "Sales & Marketing" },
+    { label: "Human Resources", value: "Human Resources" },
+    { label: "Finance & Accounting", value: "Finance & Accounting" },
+    { label: "Operations", value: "Operations" },
+    { label: "Customer Support", value: "Customer Support" },
+    { label: "Other", value: "Other" },
+  ];
+
+  const industryNatureOptions = [
+    { label: "Information Technology", value: "Information Technology" },
+    { label: "Healthcare & Medical", value: "Healthcare & Medical" },
+    { label: "Finance & Banking", value: "Finance & Banking" },
+    { label: "Education & Training", value: "Education & Training" },
+    { label: "Manufacturing", value: "Manufacturing" },
+    { label: "Retail & E-commerce", value: "Retail & E-commerce" },
+    { label: "Telecommunications", value: "Telecommunications" },
+    { label: "Automotive", value: "Automotive" },
+    {
+      label: "Construction & Real Estate",
+      value: "Construction & Real Estate",
+    },
+    { label: "Media & Entertainment", value: "Media & Entertainment" },
+    { label: "Hospitality & Tourism", value: "Hospitality & Tourism" },
+    { label: "Agriculture", value: "Agriculture" },
+    { label: "Energy & Utilities", value: "Energy & Utilities" },
+    {
+      label: "Government & Public Sector",
+      value: "Government & Public Sector",
+    },
+    { label: "Non-Profit", value: "Non-Profit" },
+    { label: "Other", value: "Other" },
+  ];
   const availabilityOptions = [
     { label: "Open to work", value: "open_to_work" },
     { label: "Not looking", value: "not_looking" },
@@ -170,14 +224,16 @@ export default function Signup() {
     try {
       const response = await apiService.getSkills();
       if (response.success) {
-        setAvailableSkills(response.data.map(skill => ({
-          label: skill.skill_name,
-          value: skill.skill_name,
-          category: skill.skill_category
-        })));
+        setAvailableSkills(
+          response.data.map((skill) => ({
+            label: skill.skill_name,
+            value: skill.skill_name,
+            category: skill.skill_category,
+          }))
+        );
       }
     } catch (error) {
-      console.log('Error loading skills:', error);
+      console.log("Error loading skills:", error);
     }
   };
 
@@ -185,32 +241,35 @@ export default function Signup() {
   const pickProfileImage = async () => {
     try {
       // Request permissions
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please grant permission to access photos');
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission needed",
+          "Please grant permission to access photos"
+        );
         return;
       }
 
       // Show action sheet for image source selection
-      Alert.alert(
-        'Select Image',
-        'Choose image source',
-        [
-          { text: 'Camera', onPress: () => openCamera() },
-          { text: 'Photo Library', onPress: () => openImageLibrary() },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
+      Alert.alert("Select Image", "Choose image source", [
+        { text: "Camera", onPress: () => openCamera() },
+        { text: "Photo Library", onPress: () => openImageLibrary() },
+        { text: "Cancel", style: "cancel" },
+      ]);
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick image');
+      Alert.alert("Error", "Failed to pick image");
     }
   };
 
   const openCamera = async () => {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please grant permission to access camera');
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission needed",
+          "Please grant permission to access camera"
+        );
         return;
       }
 
@@ -225,7 +284,7 @@ export default function Signup() {
         setProfileImage(result.assets[0]);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to take photo');
+      Alert.alert("Error", "Failed to take photo");
     }
   };
 
@@ -242,22 +301,22 @@ export default function Signup() {
         setProfileImage(result.assets[0]);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick image');
+      Alert.alert("Error", "Failed to pick image");
     }
   };
 
   // Input handlers
   const handleInputChange = (field, value) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [field]: value
+      [field]: value,
     }));
 
     // Clear error when user starts typing
     if (errors[field]) {
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        [field]: null
+        [field]: null,
       }));
     }
 
@@ -272,7 +331,7 @@ export default function Signup() {
     setSkills(newSkills);
     // Clear skills error if exists
     if (errors.skills) {
-      setErrors(prev => ({ ...prev, skills: null }));
+      setErrors((prev) => ({ ...prev, skills: null }));
     }
     // Clear signup error when user modifies skills
     if (signupError) {
@@ -280,13 +339,16 @@ export default function Signup() {
     }
   };
 
+  
   // Validation
   const validateForm = () => {
     const newErrors = {};
 
     // Common validations
-    if (!formData.first_name.trim()) newErrors.first_name = "First name is required";
-    if (!formData.last_name.trim()) newErrors.last_name = "Last name is required";
+    if (!formData.first_name.trim())
+      newErrors.first_name = "First name is required";
+    if (!formData.last_name.trim())
+      newErrors.last_name = "Last name is required";
     if (!formData.email.trim()) {
       newErrors.email = "Email is required";
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
@@ -310,18 +372,28 @@ export default function Signup() {
 
     // Mandatory dropdown validations
     if (!formData.gender) newErrors.gender = "Gender is required";
-    if (!formData.notice_period) newErrors.notice_period = "Notice period is required";
-    if (!formData.job_type_preference || formData.job_type_preference.length === 0) {
+    if (!formData.notice_period)
+      newErrors.notice_period = "Notice period is required";
+    if (
+      !formData.job_type_preference ||
+      formData.job_type_preference.length === 0
+    ) {
       newErrors.job_type_preference = "Job type preference is required";
     }
-    if (!formData.work_mode_preference || formData.work_mode_preference.length === 0) {
+    if (
+      !formData.work_mode_preference ||
+      formData.work_mode_preference.length === 0
+    ) {
       newErrors.work_mode_preference = "Work mode preference is required";
     }
-    if (!formData.availability_status) newErrors.availability_status = "Availability status is required";
-    if (!formData.profile_visibility) newErrors.profile_visibility = "Profile visibility is required";
+    if (!formData.availability_status)
+      newErrors.availability_status = "Availability status is required";
+    if (!formData.profile_visibility)
+      newErrors.profile_visibility = "Profile visibility is required";
 
     // URL validations
-    const urlRegex = /^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$/;
+    const urlRegex =
+      /^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$/;
 
     if (formData.linkedin_url && !urlRegex.test(formData.linkedin_url)) {
       newErrors.linkedin_url = "Invalid LinkedIn URL";
@@ -336,13 +408,44 @@ export default function Signup() {
       newErrors.company_website = "Invalid Company website URL";
     }
 
+
+    //new validation
+    if (!skills || skills.length === 0) {
+    newErrors.skills = "At least one skill is required";
+  }
+
+  // Other required field validations...
+  if (!formData.availability_status) {
+    newErrors.availability_status = "Availability status is required";
+  }
+  
+  if (!formData.profile_visibility) {
+    newErrors.profile_visibility = "Profile visibility is required";
+  }
+  
+  if (!formData.notice_period) {
+    newErrors.notice_period = "Notice period is required";
+  }
+  
+  if (!formData.work_mode_preference || formData.work_mode_preference.length === 0) {
+    newErrors.work_mode_preference = "At least one work mode preference is required";
+  }
+  
+  if (!formData.job_type_preference || formData.job_type_preference.length === 0) {
+    newErrors.job_type_preference = "At least one job type preference is required";
+  }
     // Founded year validation
-    if (formData.founded_year && (formData.founded_year < 1800 || formData.founded_year > new Date().getFullYear())) {
+    if (
+      formData.founded_year &&
+      (formData.founded_year < 1800 ||
+        formData.founded_year > new Date().getFullYear())
+    ) {
       newErrors.founded_year = "Invalid founded year";
     }
 
     // Jobseeker-specific validations
-    if (skills.length === 0) newErrors.skills = "At least one skill is required";
+    if (skills.length === 0)
+      newErrors.skills = "At least one skill is required";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -351,7 +454,7 @@ export default function Signup() {
   // Form submission
   const handleSubmit = async () => {
     if (!validateForm()) {
-      setSignupError('Please fix the validation errors above and try again');
+      setSignupError("Please fix the validation errors above and try again");
       return;
     }
 
@@ -363,29 +466,45 @@ export default function Signup() {
       const formDataToSend = new FormData();
 
       // Add user type first
-      formDataToSend.append('user_type', userType);
+      formDataToSend.append("user_type", userType);
 
       // Add only essential fields to reduce complexity
       const essentialFields = [
-        'first_name', 'last_name', 'email', 'phone', 'password',
-        'date_of_birth', 'gender', 'location_city', 'location_state'
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "password",
+        "date_of_birth",
+        "gender",
+        "location_city",
+        "location_state",
       ];
 
       // Add essential fields first
-      essentialFields.forEach(key => {
-        if (formData[key] && formData[key] !== '') {
+      essentialFields.forEach((key) => {
+        if (formData[key] && formData[key] !== "") {
           formDataToSend.append(key, formData[key].toString());
         }
       });
 
       // Add jobseeker-specific fields
-      if (formData.current_job_title) formDataToSend.append('current_job_title', formData.current_job_title);
-      if (formData.experience_years !== undefined) formDataToSend.append('experience_years', formData.experience_years.toString());
-      if (formData.experience_months !== undefined) formDataToSend.append('experience_months', formData.experience_months.toString());
+      if (formData.current_job_title)
+        formDataToSend.append("current_job_title", formData.current_job_title);
+      if (formData.experience_years !== undefined)
+        formDataToSend.append(
+          "experience_years",
+          formData.experience_years.toString()
+        );
+      if (formData.experience_months !== undefined)
+        formDataToSend.append(
+          "experience_months",
+          formData.experience_months.toString()
+        );
 
       // Add skills for jobseekers
       if (skills.length > 0) {
-        formDataToSend.append('skills', JSON.stringify(skills));
+        formDataToSend.append("skills", JSON.stringify(skills));
       }
 
       // Skip profile image for now to reduce complexity
@@ -410,8 +529,8 @@ export default function Signup() {
       // Log FormData contents
       // console.log('📋 FormData contents:');
       for (let [key, value] of formDataToSend.entries()) {
-        if (key === 'profile_image') {
-          console.log(`${key}:`, 'File object');
+        if (key === "profile_image") {
+          console.log(`${key}:`, "File object");
         } else {
           console.log(`${key}:`, value);
         }
@@ -422,7 +541,10 @@ export default function Signup() {
 
       if (response.success) {
         // New flow: Check if verification is required (should always be true now)
-        if (response.requires_verification || response.data?.verification_required) {
+        if (
+          response.requires_verification ||
+          response.data?.verification_required
+        ) {
           // Store email for verification modal
           setSignupEmail(formData.email);
 
@@ -430,28 +552,33 @@ export default function Signup() {
           setShowVerificationModal(true);
           setIsLoading(false);
 
-          console.log('✅ Signup data submitted, verification modal shown');
+          console.log("✅ Signup data submitted, verification modal shown");
           return;
         }
 
         // Fallback (should not reach here with new flow, but keeping for safety)
-        console.warn('⚠️ Unexpected response: verification not required');
-        setSignupError('Unexpected response from server. Please try again.');
-
+        console.warn("⚠️ Unexpected response: verification not required");
+        setSignupError("Unexpected response from server. Please try again.");
       } else {
-        console.log("response",response)
+        console.log("response", response);
         // Handle validation errors from server - display exact errors from API
-        if (response.errors && Array.isArray(response.errors) && response.errors.length > 0) {
-          setSignupError(response.errors.join('\n'));
+        if (
+          response.errors &&
+          Array.isArray(response.errors) &&
+          response.errors.length > 0
+        ) {
+          setSignupError(response.errors.join("\n"));
         } else if (response.message) {
           setSignupError(response.message);
         } else {
-          setSignupError('Something went wrong. Please try again.');
+          setSignupError("Something went wrong. Please try again.");
         }
       }
     } catch (error) {
-      setSignupError('Network error. Please check your internet connection and try again.');
-      console.error('Signup error:', error);
+      setSignupError(
+        "Network error. Please check your internet connection and try again."
+      );
+      console.error("Signup error:", error);
     } finally {
       setIsLoading(false);
     }
@@ -460,12 +587,12 @@ export default function Signup() {
   const handleSuccessModalClose = () => {
     setShowSuccessModal(false);
     // Navigate to jobseeker home
-    router.push('/jobseeker/home');
+    router.push("/jobseeker/home");
   };
 
   // Verification handler (called when verification succeeds)
   const handleVerificationSuccess = (userData) => {
-    console.log('✅ Verification successful, user data received:', userData);
+    console.log("✅ Verification successful, user data received:", userData);
     // The VerificationModal component handles navigation automatically
   };
 
@@ -553,8 +680,6 @@ export default function Signup() {
       )}
     </TouchableOpacity>
   );
-
-
 
   // Success Modal
   const SuccessModal = () => (
@@ -786,12 +911,14 @@ export default function Signup() {
                 Personal Information
               </Text>
 
-              <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+              <View style={{ flexDirection: "row", gap: theme.spacing.md }}>
                 <View style={{ flex: 1 }}>
                   <CustomInput
                     label="First Name"
                     value={formData.first_name}
-                    onChangeText={(value) => handleInputChange("first_name", value)}
+                    onChangeText={(value) =>
+                      handleInputChange("first_name", value)
+                    }
                     placeholder="Enter first name"
                     icon="person-outline"
                     error={errors.first_name}
@@ -802,7 +929,9 @@ export default function Signup() {
                   <CustomInput
                     label="Last Name"
                     value={formData.last_name}
-                    onChangeText={(value) => handleInputChange("last_name", value)}
+                    onChangeText={(value) =>
+                      handleInputChange("last_name", value)
+                    }
                     placeholder="Enter last name"
                     icon="person-outline"
                     error={errors.last_name}
@@ -849,7 +978,9 @@ export default function Signup() {
               <CustomInput
                 label="Confirm Password"
                 value={formData.confirm_password}
-                onChangeText={(value) => handleInputChange("confirm_password", value)}
+                onChangeText={(value) =>
+                  handleInputChange("confirm_password", value)
+                }
                 placeholder="Re-enter password"
                 icon="lock-closed-outline"
                 secureTextEntry
@@ -868,12 +999,14 @@ export default function Signup() {
                 required
               />
 
-              <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+              <View style={{ flexDirection: "row", gap: theme.spacing.md }}>
                 <View style={{ flex: 1 }}>
                   <CustomInput
                     label="City"
                     value={formData.location_city}
-                    onChangeText={(value) => handleInputChange("location_city", value)}
+                    onChangeText={(value) =>
+                      handleInputChange("location_city", value)
+                    }
                     placeholder="Enter city"
                     icon="location-outline"
                     error={errors.location_city}
@@ -883,7 +1016,9 @@ export default function Signup() {
                   <CustomInput
                     label="State"
                     value={formData.location_state}
-                    onChangeText={(value) => handleInputChange("location_state", value)}
+                    onChangeText={(value) =>
+                      handleInputChange("location_state", value)
+                    }
                     placeholder="Enter state"
                     icon="location-outline"
                     error={errors.location_state}
@@ -906,8 +1041,8 @@ export default function Signup() {
                 <TouchableOpacity
                   onPress={pickProfileImage}
                   style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
+                    flexDirection: "row",
+                    alignItems: "center",
                     backgroundColor: theme.colors.background.card,
                     borderWidth: 1.5,
                     borderColor: theme.colors.border.light,
@@ -933,8 +1068,8 @@ export default function Signup() {
                         height: 50,
                         borderRadius: 25,
                         backgroundColor: theme.colors.neutral.lightGray,
-                        justifyContent: 'center',
-                        alignItems: 'center',
+                        justifyContent: "center",
+                        alignItems: "center",
                         marginRight: theme.spacing.md,
                       }}
                     >
@@ -953,7 +1088,7 @@ export default function Signup() {
                         color: theme.colors.text.primary,
                       }}
                     >
-                      {profileImage ? 'Change Photo' : 'Add Profile Photo'}
+                      {profileImage ? "Change Photo" : "Add Profile Photo"}
                     </Text>
                     <Text
                       style={{
@@ -962,7 +1097,9 @@ export default function Signup() {
                         color: theme.colors.text.tertiary,
                       }}
                     >
-                      {profileImage ? (profileImage.fileName || 'Image selected') : 'Tap to select from camera or gallery'}
+                      {profileImage
+                        ? profileImage.fileName || "Image selected"
+                        : "Tap to select from camera or gallery"}
                     </Text>
                   </View>
                   <Ionicons
@@ -991,7 +1128,9 @@ export default function Signup() {
                   <CustomInput
                     label="Current Job Title"
                     value={formData.current_job_title}
-                    onChangeText={(value) => handleInputChange("current_job_title", value)}
+                    onChangeText={(value) =>
+                      handleInputChange("current_job_title", value)
+                    }
                     placeholder="e.g., Software Engineer (Optional)"
                     icon="briefcase-outline"
                     error={errors.current_job_title}
@@ -1000,18 +1139,25 @@ export default function Signup() {
                   <CustomInput
                     label="Current Company"
                     value={formData.current_company}
-                    onChangeText={(value) => handleInputChange("current_company", value)}
+                    onChangeText={(value) =>
+                      handleInputChange("current_company", value)
+                    }
                     placeholder="Company name (Optional)"
                     icon="business-outline"
                     error={errors.current_company}
                   />
 
-                  <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+                  <View style={{ flexDirection: "row", gap: theme.spacing.md }}>
                     <View style={{ flex: 1 }}>
                       <CustomInput
                         label="Experience (Years)"
                         value={formData.experience_years.toString()}
-                        onChangeText={(value) => handleInputChange("experience_years", parseInt(value) || 0)}
+                        onChangeText={(value) =>
+                          handleInputChange(
+                            "experience_years",
+                            parseInt(value) || 0
+                          )
+                        }
                         placeholder="0"
                         icon="time-outline"
                         keyboardType="number-pad"
@@ -1022,7 +1168,12 @@ export default function Signup() {
                       <CustomInput
                         label="Experience (Months)"
                         value={formData.experience_months.toString()}
-                        onChangeText={(value) => handleInputChange("experience_months", parseInt(value) || 0)}
+                        onChangeText={(value) =>
+                          handleInputChange(
+                            "experience_months",
+                            parseInt(value) || 0
+                          )
+                        }
                         placeholder="0"
                         icon="time-outline"
                         keyboardType="number-pad"
@@ -1034,7 +1185,9 @@ export default function Signup() {
                   <CustomInput
                     label="Current Salary (Annual)"
                     value={formData.current_salary}
-                    onChangeText={(value) => handleInputChange("current_salary", value)}
+                    onChangeText={(value) =>
+                      handleInputChange("current_salary", value)
+                    }
                     placeholder="e.g., 500000 (in INR, Optional)"
                     icon="cash-outline"
                     keyboardType="numeric"
@@ -1044,7 +1197,9 @@ export default function Signup() {
                   <CustomInput
                     label="Expected Salary (Annual)"
                     value={formData.expected_salary}
-                    onChangeText={(value) => handleInputChange("expected_salary", value)}
+                    onChangeText={(value) =>
+                      handleInputChange("expected_salary", value)
+                    }
                     placeholder="e.g., 600000 (in INR)"
                     icon="cash-outline"
                     keyboardType="numeric"
@@ -1054,7 +1209,9 @@ export default function Signup() {
                   <CustomDropdown
                     label="Notice Period"
                     value={formData.notice_period}
-                    onSelect={(value) => handleInputChange("notice_period", value)}
+                    onSelect={(value) =>
+                      handleInputChange("notice_period", value)
+                    }
                     options={noticePeriodOptions}
                     placeholder="Choose option"
                     icon="calendar-outline"
@@ -1063,12 +1220,25 @@ export default function Signup() {
                   />
 
                   <CustomDropdown
-                    label="Job Type Preference (Multiple allowed)"
-                    value={Array.isArray(formData.job_type_preference) ? formData.job_type_preference[0] : formData.job_type_preference}
+                    label="Job Type Preference"
+                    value={
+                      Array.isArray(formData.job_type_preference)
+                        ? formData.job_type_preference[0]
+                        : formData.job_type_preference
+                    }
                     onSelect={(value) => {
-                      const currentValues = Array.isArray(formData.job_type_preference) ? formData.job_type_preference : [formData.job_type_preference].filter(Boolean);
-                      const newValues = currentValues.includes(value) ? currentValues : [...currentValues, value];
-                      handleInputChange("job_type_preference", newValues.slice(0, 3)); // Max 3 selections
+                      const currentValues = Array.isArray(
+                        formData.job_type_preference
+                      )
+                        ? formData.job_type_preference
+                        : [formData.job_type_preference].filter(Boolean);
+                      const newValues = currentValues.includes(value)
+                        ? currentValues
+                        : [...currentValues, value];
+                      handleInputChange(
+                        "job_type_preference",
+                        newValues.slice(0, 3)
+                      ); // Max 3 selections
                     }}
                     options={jobTypeOptions}
                     placeholder="Choose option"
@@ -1078,12 +1248,25 @@ export default function Signup() {
                   />
 
                   <CustomDropdown
-                    label="Work Mode Preference (Multiple allowed)"
-                    value={Array.isArray(formData.work_mode_preference) ? formData.work_mode_preference[0] : formData.work_mode_preference}
+                    label="Work Mode Preference"
+                    value={
+                      Array.isArray(formData.work_mode_preference)
+                        ? formData.work_mode_preference[0]
+                        : formData.work_mode_preference
+                    }
                     onSelect={(value) => {
-                      const currentValues = Array.isArray(formData.work_mode_preference) ? formData.work_mode_preference : [formData.work_mode_preference].filter(Boolean);
-                      const newValues = currentValues.includes(value) ? currentValues : [...currentValues, value];
-                      handleInputChange("work_mode_preference", newValues.slice(0, 3)); // Max 3 selections
+                      const currentValues = Array.isArray(
+                        formData.work_mode_preference
+                      )
+                        ? formData.work_mode_preference
+                        : [formData.work_mode_preference].filter(Boolean);
+                      const newValues = currentValues.includes(value)
+                        ? currentValues
+                        : [...currentValues, value];
+                      handleInputChange(
+                        "work_mode_preference",
+                        newValues.slice(0, 3)
+                      ); // Max 3 selections
                     }}
                     options={workModeOptions}
                     placeholder="Choose option"
@@ -1095,7 +1278,9 @@ export default function Signup() {
                   <CustomDropdown
                     label="Availability Status"
                     value={formData.availability_status}
-                    onSelect={(value) => handleInputChange("availability_status", value)}
+                    onSelect={(value) =>
+                      handleInputChange("availability_status", value)
+                    }
                     options={availabilityOptions}
                     placeholder="Choose option"
                     icon="checkmark-circle-outline"
@@ -1106,13 +1291,89 @@ export default function Signup() {
                   <CustomDropdown
                     label="Profile Visibility"
                     value={formData.profile_visibility}
-                    onSelect={(value) => handleInputChange("profile_visibility", value)}
+                    onSelect={(value) =>
+                      handleInputChange("profile_visibility", value)
+                    }
                     options={profileVisibilityOptions}
                     placeholder="Choose option"
                     icon="eye-outline"
                     error={errors.profile_visibility}
                     required
                   />
+
+                  <>
+                    <Text
+                      style={{
+                        fontSize: theme.typography.sizes.md,
+                        fontFamily: theme.typography.fonts.semiBold,
+                        color: theme.colors.text.primary,
+                        marginTop: theme.spacing.xl,
+                        marginBottom: theme.spacing.lg,
+                      }}
+                    >
+                      Career Preferences
+                    </Text>
+
+                    <CustomDropdown
+                      label="Function/Role Category"
+                      value={formData.function}
+                      onSelect={(value) => handleInputChange("function", value)}
+                      options={functionOptions}
+                      placeholder="Choose your function"
+                      icon="briefcase-outline"
+                      error={errors.function}
+                    />
+
+                    <CustomDropdown
+                      label="Industry Preference"
+                      value={formData.industry_nature}
+                      onSelect={(value) =>
+                        handleInputChange("industry_nature", value)
+                      }
+                      options={industryNatureOptions}
+                      placeholder="Choose your industry"
+                      icon="business-outline"
+                      error={errors.industry_nature}
+                    />
+
+                    <CustomDropdown
+                      label="Work Type"
+                      value={formData.work_type}
+                      onSelect={(value) =>
+                        handleInputChange("work_type", value)
+                      }
+                      options={workTypeOptions}
+                      placeholder="Choose work type"
+                      icon="time-outline"
+                      error={errors.work_type}
+                    />
+
+                    <CustomInput
+                      label="Area of Interest"
+                      value={formData.area_of_interest}
+                      onChangeText={(value) =>
+                        handleInputChange("area_of_interest", value)
+                      }
+                      placeholder="e.g., Machine Learning, Cloud Architecture..."
+                      icon="bulb-outline"
+                      multiline
+                      numberOfLines={2}
+                      error={errors.area_of_interest}
+                    />
+
+                    <CustomInput
+                      label="Full Address"
+                      value={formData.full_address}
+                      onChangeText={(value) =>
+                        handleInputChange("full_address", value)
+                      }
+                      placeholder="Complete address with pincode"
+                      icon="home-outline"
+                      multiline
+                      numberOfLines={3}
+                      error={errors.full_address}
+                    />
+                  </>
 
                   {/* Professional URLs Section */}
                   <Text
@@ -1130,7 +1391,9 @@ export default function Signup() {
                   <CustomInput
                     label="LinkedIn URL"
                     value={formData.linkedin_url}
-                    onChangeText={(value) => handleInputChange("linkedin_url", value)}
+                    onChangeText={(value) =>
+                      handleInputChange("linkedin_url", value)
+                    }
                     placeholder="https://linkedin.com/in/yourprofile"
                     icon="logo-linkedin"
                     keyboardType="url"
@@ -1141,7 +1404,9 @@ export default function Signup() {
                   <CustomInput
                     label="GitHub URL"
                     value={formData.github_url}
-                    onChangeText={(value) => handleInputChange("github_url", value)}
+                    onChangeText={(value) =>
+                      handleInputChange("github_url", value)
+                    }
                     placeholder="https://github.com/yourusername"
                     icon="logo-github"
                     keyboardType="url"
@@ -1152,7 +1417,9 @@ export default function Signup() {
                   <CustomInput
                     label="Portfolio URL"
                     value={formData.portfolio_url}
-                    onChangeText={(value) => handleInputChange("portfolio_url", value)}
+                    onChangeText={(value) =>
+                      handleInputChange("portfolio_url", value)
+                    }
                     placeholder="https://yourportfolio.com"
                     icon="globe-outline"
                     keyboardType="url"
@@ -1176,8 +1443,11 @@ export default function Signup() {
                   <SkillsInput
                     skills={skills}
                     onSkillsChange={handleSkillsChange}
-                    label={`Skills (Add up to 10 skills) ${userType === 'jobseeker' ? '*' : ''}`}
-                    required={userType === 'jobseeker'}
+                    availableSkills={availableSkills} // ✅ ADD THIS LINE
+                    label={`Skills (Add up to 10 skills) ${
+                      userType === "jobseeker" ? "*" : ""
+                    }`}
+                    required={userType === "jobseeker"}
                     error={errors.skills}
                   />
                 </>
@@ -1211,7 +1481,7 @@ export default function Signup() {
               {signupError ? (
                 <View
                   style={{
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    backgroundColor: "rgba(239, 68, 68, 0.1)",
                     borderRadius: theme.borderRadius.md,
                     padding: theme.spacing.md,
                     marginTop: theme.spacing.lg,
@@ -1224,7 +1494,7 @@ export default function Signup() {
                       fontSize: theme.typography.sizes.sm,
                       fontFamily: theme.typography.fonts.medium,
                       color: theme.colors.status.error,
-                      textAlign: 'center',
+                      textAlign: "center",
                     }}
                   >
                     {signupError}

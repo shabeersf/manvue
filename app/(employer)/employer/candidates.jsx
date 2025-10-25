@@ -1,175 +1,168 @@
-import theme from '@/theme';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
-import React, { useState } from 'react';
+import apiService from "@/services/apiService";
+import theme from "@/theme";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import React, { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
+  Image,
   RefreshControl,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-} from 'react-native';
+} from "react-native";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
 export default function EmployerCandidates() {
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'discovered', 'proposal_sent', 'accepted'
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState("all"); // 'all', 'discovered', 'proposal_sent', 'accepted'
+  const [candidates, setCandidates] = useState([]);
+  const [stats, setStats] = useState({
+    total_matches: 0,
+    new_discoveries: 0,
+    proposals_sent: 0,
+    accepted: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [pagination, setPagination] = useState({
+    limit: 20,
+    offset: 0,
+  });
+  const [employerUserId, setEmployerUserId] = useState(null);
+  const [companyId, setCompanyId] = useState(null);
 
-  // Mock candidates data - redesigned for reverse recruitment
-  const [candidates] = useState([
-    {
-      id: '1',
-      name: 'John Smith',
-      initials: 'JS',
-      position: 'Senior React Developer',
-      experience: '5 years',
-      location: 'Mumbai, Remote',
-      skills: ['React', 'Node.js', 'TypeScript', 'MongoDB', 'AWS'],
-      education: 'B.Tech Computer Science',
-      institution: 'IIT Mumbai',
-      matchPercentage: 95,
-      status: 'discovered', // 'discovered', 'proposal_sent', 'accepted', 'rejected'
-      matchedJobTitle: 'Senior React Developer',
-      discoveredTime: '2 hours ago',
-      proposalSentTime: null,
-      salary: '₹12L - ₹18L',
-      profileCompletion: 92,
-      isAvailable: true,
-      lastActive: 'Active now',
-      resumeUrl: null,
-    },
-    {
-      id: '2',
-      name: 'Sarah Johnson',
-      initials: 'SJ',
-      position: 'Frontend Developer',
-      experience: '3 years',
-      location: 'Bangalore, Hybrid',
-      skills: ['React', 'Vue.js', 'CSS', 'JavaScript', 'Figma'],
-      education: 'M.Tech Software Engineering',
-      institution: 'BITS Pilani',
-      matchPercentage: 88,
-      status: 'proposal_sent',
-      matchedJobTitle: 'Frontend Developer',
-      discoveredTime: '5 hours ago',
-      proposalSentTime: '2 hours ago',
-      salary: '₹8L - ₹14L',
-      profileCompletion: 88,
-      isAvailable: true,
-      lastActive: '2 hours ago',
-      resumeUrl: null,
-    },
-    {
-      id: '3',
-      name: 'Mike Chen',
-      initials: 'MC',
-      position: 'Full Stack Developer',
-      experience: '4 years',
-      location: 'Pune, On-site',
-      skills: ['React', 'Python', 'Django', 'PostgreSQL', 'Docker'],
-      education: 'B.E. Information Technology',
-      institution: 'Pune University',
-      matchPercentage: 82,
-      status: 'accepted',
-      matchedJobTitle: 'Full Stack Developer',
-      discoveredTime: '1 day ago',
-      proposalSentTime: '8 hours ago',
-      salary: '₹10L - ₹16L',
-      profileCompletion: 85,
-      isAvailable: false,
-      lastActive: '1 day ago',
-      resumeUrl: null,
-    },
-    {
-      id: '4',
-      name: 'Priya Sharma',
-      initials: 'PS',
-      position: 'React Native Developer',
-      experience: '3.5 years',
-      location: 'Delhi, Remote',
-      skills: ['React Native', 'Mobile Development', 'Firebase', 'Redux'],
-      education: 'MCA',
-      institution: 'Delhi University',
-      matchPercentage: 91,
-      status: 'discovered',
-      matchedJobTitle: 'Mobile App Developer',
-      discoveredTime: '3 hours ago',
-      proposalSentTime: null,
-      salary: '₹9L - ₹15L',
-      profileCompletion: 90,
-      isAvailable: true,
-      lastActive: 'Active now',
-      resumeUrl: null,
-    },
-    {
-      id: '5',
-      name: 'Rahul Kumar',
-      initials: 'RK',
-      position: 'Backend Developer',
-      experience: '6 years',
-      location: 'Hyderabad, Hybrid',
-      skills: ['Node.js', 'Python', 'AWS', 'Microservices', 'Kubernetes'],
-      education: 'B.Tech Computer Science',
-      institution: 'NIT Warangal',
-      matchPercentage: 87,
-      status: 'proposal_sent',
-      matchedJobTitle: 'Senior Backend Developer',
-      discoveredTime: '6 hours ago',
-      proposalSentTime: '4 hours ago',
-      salary: '₹14L - ₹22L',
-      profileCompletion: 94,
-      isAvailable: true,
-      lastActive: '30 mins ago',
-      resumeUrl: null,
-    },
-  ]);
+  // Load user data
+  useEffect(() => {
+    loadUserData();
+  }, []);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => {
+  // Load candidates when filters change
+  useEffect(() => {
+    if (employerUserId && companyId) {
+      loadCandidates(true); // true = reset pagination
+    }
+  }, [activeFilter, employerUserId, companyId]);
+
+  const loadUserData = async () => {
+    try {
+      const userId = await SecureStore.getItemAsync("user_id");
+      const storedCompanyId = await SecureStore.getItemAsync("company_id");
+
+      if (userId && storedCompanyId) {
+        setEmployerUserId(userId);
+        setCompanyId(storedCompanyId);
+      } else {
+        Alert.alert("Error", "User session not found. Please login again.");
+        router.replace("/(auth)/login");
+      }
+    } catch (error) {
+      console.error("Failed to load user data:", error);
+      Alert.alert("Error", "Failed to load user data");
+    }
+  };
+
+  const loadCandidates = async (resetPagination = false) => {
+    if (!employerUserId || !companyId) return;
+
+    try {
+      if (resetPagination) {
+        setIsLoading(true);
+        setPagination({ limit: 20, offset: 0 });
+      } else {
+        setIsLoadingMore(true);
+      }
+
+      const params = {
+        employer_user_id: parseInt(employerUserId),
+        company_id: parseInt(companyId),
+        status: activeFilter,
+        search_query: searchQuery,
+        limit: resetPagination ? 20 : pagination.limit,
+        offset: resetPagination ? 0 : pagination.offset,
+      };
+
+      // console.log("📤 Loading candidates with params:", params);
+
+      const response = await apiService.getMatchingCandidates(params);
+
+      console.log("📦 Candidates response:", response);
+
+      if (response.success) {
+        const newCandidates = response.data.candidates || [];
+        const totalCount = response.data.total_count || 0;
+        const newStats = response.data.stats || {};
+        const paginationData = response.data.pagination || {};
+
+        if (resetPagination) {
+          setCandidates(newCandidates);
+        } else {
+          setCandidates((prev) => [...prev, ...newCandidates]);
+        }
+
+        setStats(newStats);
+        setHasMore(paginationData.has_more || false);
+        setPagination({
+          limit: paginationData.limit || 20,
+          offset: (paginationData.offset || 0) + (paginationData.limit || 20),
+        });
+      } else {
+        console.error("Failed to load candidates:", response.message);
+        Alert.alert("Error", response.message || "Failed to load candidates");
+      }
+    } catch (error) {
+      console.error("Error loading candidates:", error);
+      Alert.alert("Error", "Failed to load candidates. Please try again.");
+    } finally {
+      setIsLoading(false);
+      setIsLoadingMore(false);
       setRefreshing(false);
-    }, 2000);
-  };
-
-  // Filter candidates based on active filter and search query
-  const getFilteredCandidates = () => {
-    let filtered = candidates;
-
-    // Apply status filter
-    if (activeFilter !== 'all') {
-      filtered = filtered.filter(candidate => candidate.status === activeFilter);
     }
+  };
 
-    // Apply search filter
-    if (searchQuery.trim()) {
-      filtered = filtered.filter(candidate =>
-        candidate.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        candidate.position.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        candidate.skills.some(skill => skill.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        candidate.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        candidate.matchedJobTitle.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadCandidates(true);
+  }, [employerUserId, companyId, activeFilter, searchQuery]);
+
+  const handleLoadMore = () => {
+    if (!isLoadingMore && hasMore && !isLoading) {
+      loadCandidates(false);
     }
-
-    return filtered;
   };
 
-  // Get filter stats
-  const getFilterStats = () => {
-    return {
-      all: candidates.length,
-      discovered: candidates.filter(c => c.status === 'discovered').length,
-      proposal_sent: candidates.filter(c => c.status === 'proposal_sent').length,
-      accepted: candidates.filter(c => c.status === 'accepted').length,
-    };
+  const handleSearch = () => {
+    loadCandidates(true);
   };
 
-  const stats = getFilterStats();
+  const handleFilterChange = (filter) => {
+    setActiveFilter(filter);
+    // loadCandidates will be called by useEffect
+  };
+
+  const handleSendProposal = (candidateId) => {
+    
+            // Navigate to proposal screen with candidate ID
+            router.push(`/candidate-details/${candidateId}`);
+         
+  };
+
+  const handleViewCandidate = (candidateId) => {
+    router.push(`/candidate-details/${candidateId}`);
+  };
+
+  const handleStartConversation = (candidateId) => {
+    router.push(`/chats/${candidateId}`);
+  };
 
   // Header Component
   const Header = () => (
@@ -186,7 +179,7 @@ export default function EmployerCandidates() {
       {/* Discovery Stats */}
       <View
         style={{
-          flexDirection: 'row',
+          flexDirection: "row",
           gap: theme.spacing.sm,
           marginBottom: theme.spacing.md,
         }}
@@ -197,7 +190,7 @@ export default function EmployerCandidates() {
             backgroundColor: theme.colors.background.accent,
             borderRadius: theme.borderRadius.lg,
             padding: theme.spacing.md,
-            alignItems: 'center',
+            alignItems: "center",
           }}
         >
           <Text
@@ -207,14 +200,14 @@ export default function EmployerCandidates() {
               color: theme.colors.primary.teal,
             }}
           >
-            {candidates.length}
+            {stats.total_matches}
           </Text>
           <Text
             style={{
               fontSize: theme.typography.sizes.xs,
               fontFamily: theme.typography.fonts.medium,
               color: theme.colors.text.secondary,
-              textAlign: 'center',
+              textAlign: "center",
             }}
           >
             Total Matches
@@ -227,7 +220,7 @@ export default function EmployerCandidates() {
             backgroundColor: theme.colors.background.accent,
             borderRadius: theme.borderRadius.lg,
             padding: theme.spacing.md,
-            alignItems: 'center',
+            alignItems: "center",
           }}
         >
           <Text
@@ -237,14 +230,14 @@ export default function EmployerCandidates() {
               color: theme.colors.primary.orange,
             }}
           >
-            {stats.discovered}
+            {stats.new_discoveries}
           </Text>
           <Text
             style={{
               fontSize: theme.typography.sizes.xs,
               fontFamily: theme.typography.fonts.medium,
               color: theme.colors.text.secondary,
-              textAlign: 'center',
+              textAlign: "center",
             }}
           >
             New Discoveries
@@ -257,7 +250,7 @@ export default function EmployerCandidates() {
             backgroundColor: theme.colors.background.accent,
             borderRadius: theme.borderRadius.lg,
             padding: theme.spacing.md,
-            alignItems: 'center',
+            alignItems: "center",
           }}
         >
           <Text
@@ -274,7 +267,7 @@ export default function EmployerCandidates() {
               fontSize: theme.typography.sizes.xs,
               fontFamily: theme.typography.fonts.medium,
               color: theme.colors.text.secondary,
-              textAlign: 'center',
+              textAlign: "center",
             }}
           >
             Accepted
@@ -285,8 +278,8 @@ export default function EmployerCandidates() {
       {/* Search Bar */}
       <View
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
+          flexDirection: "row",
+          alignItems: "center",
           backgroundColor: theme.colors.neutral.lightGray,
           borderRadius: theme.borderRadius.lg,
           paddingHorizontal: theme.spacing.md,
@@ -303,7 +296,8 @@ export default function EmployerCandidates() {
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Search by name, skills, position, or matching job..."
+          onSubmitEditing={handleSearch}
+          placeholder="Search by name, skills, position..."
           placeholderTextColor={theme.colors.text.placeholder}
           style={{
             flex: 1,
@@ -311,10 +305,14 @@ export default function EmployerCandidates() {
             fontFamily: theme.typography.fonts.regular,
             color: theme.colors.text.primary,
           }}
+          returnKeyType="search"
         />
         {searchQuery.length > 0 && (
           <TouchableOpacity
-            onPress={() => setSearchQuery('')}
+            onPress={() => {
+              setSearchQuery("");
+              loadCandidates(true);
+            }}
             style={{ padding: theme.spacing.xs }}
           >
             <Ionicons
@@ -327,37 +325,44 @@ export default function EmployerCandidates() {
       </View>
 
       {/* Filter Tabs */}
-      <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+      <View style={{ flexDirection: "row", gap: theme.spacing.sm }}>
         {[
-          { id: 'all', label: 'All Matches', count: stats.all },
-          { id: 'discovered', label: 'New', count: stats.discovered },
-          { id: 'proposal_sent', label: 'Proposals Sent', count: stats.proposal_sent },
-          { id: 'accepted', label: 'Accepted', count: stats.accepted },
+          { id: "all", label: "All Matches", count: stats.total_matches },
+          { id: "discovered", label: "New", count: stats.new_discoveries },
+          {
+            id: "proposal_sent",
+            label: "Proposals",
+            count: stats.proposals_sent,
+          },
+          { id: "accepted", label: "Accepted", count: stats.accepted },
         ].map((filter) => (
           <TouchableOpacity
             key={filter.id}
-            onPress={() => setActiveFilter(filter.id)}
+            onPress={() => handleFilterChange(filter.id)}
             style={{
               paddingHorizontal: theme.spacing.md,
               paddingVertical: theme.spacing.sm,
               borderRadius: theme.borderRadius.full,
-              backgroundColor: activeFilter === filter.id 
-                ? theme.colors.primary.teal 
-                : theme.colors.background.accent,
-              flexDirection: 'row',
-              alignItems: 'center',
+              backgroundColor:
+                activeFilter === filter.id
+                  ? theme.colors.primary.teal
+                  : theme.colors.background.accent,
+              flexDirection: "row",
+              alignItems: "center",
             }}
             activeOpacity={0.8}
           >
             <Text
               style={{
                 fontSize: theme.typography.sizes.sm,
-                fontFamily: activeFilter === filter.id 
-                  ? theme.typography.fonts.semiBold 
-                  : theme.typography.fonts.medium,
-                color: activeFilter === filter.id 
-                  ? theme.colors.neutral.white 
-                  : theme.colors.text.secondary,
+                fontFamily:
+                  activeFilter === filter.id
+                    ? theme.typography.fonts.semiBold
+                    : theme.typography.fonts.medium,
+                color:
+                  activeFilter === filter.id
+                    ? theme.colors.neutral.white
+                    : theme.colors.text.secondary,
               }}
             >
               {filter.label}
@@ -365,15 +370,16 @@ export default function EmployerCandidates() {
             {filter.count > 0 && (
               <View
                 style={{
-                  backgroundColor: activeFilter === filter.id 
-                    ? 'rgba(255, 255, 255, 0.3)' 
-                    : theme.colors.primary.teal,
+                  backgroundColor:
+                    activeFilter === filter.id
+                      ? "rgba(255, 255, 255, 0.3)"
+                      : theme.colors.primary.teal,
                   borderRadius: theme.borderRadius.full,
                   paddingHorizontal: theme.spacing.xs,
                   paddingVertical: 2,
                   marginLeft: theme.spacing.xs,
                   minWidth: 18,
-                  alignItems: 'center',
+                  alignItems: "center",
                 }}
               >
                 <Text
@@ -393,31 +399,41 @@ export default function EmployerCandidates() {
     </View>
   );
 
-  // Candidate Item Component - Redesigned for discovery model
+  // Candidate Item Component
   const CandidateItem = ({ item }) => {
     const getStatusColor = () => {
       switch (item.status) {
-        case 'discovered': return theme.colors.primary.orange;
-        case 'proposal_sent': return theme.colors.primary.deepBlue;
-        case 'accepted': return theme.colors.status.success;
-        case 'rejected': return theme.colors.status.error;
-        default: return theme.colors.text.tertiary;
+        case "discovered":
+          return theme.colors.primary.orange;
+        case "proposal_sent":
+          return theme.colors.primary.deepBlue;
+        case "accepted":
+          return theme.colors.status.success;
+        case "rejected":
+          return theme.colors.status.error;
+        default:
+          return theme.colors.text.tertiary;
       }
     };
 
     const getStatusText = () => {
       switch (item.status) {
-        case 'discovered': return 'New Discovery';
-        case 'proposal_sent': return 'Proposal Sent';
-        case 'accepted': return 'Accepted';
-        case 'rejected': return 'Rejected';
-        default: return 'Unknown';
+        case "discovered":
+          return "New Discovery";
+        case "proposal_sent":
+          return "Proposal Sent";
+        case "accepted":
+          return "Accepted";
+        case "rejected":
+          return "Rejected";
+        default:
+          return "Unknown";
       }
     };
 
     return (
       <TouchableOpacity
-        onPress={() => router.push(`/candidate-details/${item.id}`)}
+        onPress={() => handleViewCandidate(item.user_id)}
         style={{
           backgroundColor: theme.colors.background.card,
           borderRadius: theme.borderRadius.lg,
@@ -430,41 +446,62 @@ export default function EmployerCandidates() {
         activeOpacity={0.9}
       >
         {/* Header Row */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: theme.spacing.sm }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-start",
+            marginBottom: theme.spacing.sm,
+          }}
+        >
           {/* Candidate Avatar */}
-          <View style={{ position: 'relative', marginRight: theme.spacing.md }}>
-            <View
-              style={{
-                width: 50,
-                height: 50,
-                borderRadius: 25,
-                backgroundColor: item.status === 'discovered' 
-                  ? theme.colors.primary.orange 
-                  : theme.colors.background.accent,
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderWidth: 2,
-                borderColor: getStatusColor(),
-              }}
-            >
-              <Text
+          <View style={{ position: "relative", marginRight: theme.spacing.md }}>
+            {item.profileImage ? (
+              <Image
+                source={{ uri: item.profileImage }}
                 style={{
-                  fontSize: theme.typography.sizes.base,
-                  fontFamily: theme.typography.fonts.bold,
-                  color: item.status === 'discovered' 
-                    ? theme.colors.neutral.white 
-                    : theme.colors.primary.teal,
+                  width: 50,
+                  height: 50,
+                  borderRadius: 25,
+                  borderWidth: 2,
+                  borderColor: getStatusColor(),
+                }}
+              />
+            ) : (
+              <View
+                style={{
+                  width: 50,
+                  height: 50,
+                  borderRadius: 25,
+                  backgroundColor:
+                    item.status === "discovered"
+                      ? theme.colors.primary.orange
+                      : theme.colors.background.accent,
+                  justifyContent: "center",
+                  alignItems: "center",
+                  borderWidth: 2,
+                  borderColor: getStatusColor(),
                 }}
               >
-                {item.initials}
-              </Text>
-            </View>
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.base,
+                    fontFamily: theme.typography.fonts.bold,
+                    color:
+                      item.status === "discovered"
+                        ? theme.colors.neutral.white
+                        : theme.colors.primary.teal,
+                  }}
+                >
+                  {item.initials}
+                </Text>
+              </View>
+            )}
 
             {/* Online status */}
             {item.isAvailable && (
               <View
                 style={{
-                  position: 'absolute',
+                  position: "absolute",
                   bottom: 0,
                   right: 0,
                   width: 12,
@@ -500,16 +537,19 @@ export default function EmployerCandidates() {
             >
               {item.position} • {item.experience}
             </Text>
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.medium,
-                color: theme.colors.primary.teal,
-                marginBottom: theme.spacing.xs,
-              }}
-            >
-              Matches: {item.matchedJobTitle}
-            </Text>
+            {item.matchedJobTitle && (
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: theme.colors.primary.teal,
+                  marginBottom: theme.spacing.xs,
+                }}
+                numberOfLines={1}
+              >
+                Matches: {item.matchedJobTitle}
+              </Text>
+            )}
             <Text
               style={{
                 fontSize: theme.typography.sizes.xs,
@@ -522,7 +562,7 @@ export default function EmployerCandidates() {
           </View>
 
           {/* Status and Match */}
-          <View style={{ alignItems: 'flex-end' }}>
+          <View style={{ alignItems: "flex-end" }}>
             <View
               style={{
                 backgroundColor: `${getStatusColor()}15`,
@@ -565,63 +605,101 @@ export default function EmployerCandidates() {
         </View>
 
         {/* Details Row */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: theme.spacing.md, gap: theme.spacing.md }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-            <Ionicons
-              name="location-outline"
-              size={14}
-              color={theme.colors.text.tertiary}
-              style={{ marginRight: theme.spacing.xs }}
-            />
-            <Text
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            marginBottom: theme.spacing.md,
+            gap: theme.spacing.md,
+          }}
+        >
+          {item.location && (
+            <View
               style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
+                flexDirection: "row",
+                alignItems: "center",
+                minWidth: "45%",
               }}
             >
-              {item.location}
-            </Text>
-          </View>
+              <Ionicons
+                name="location-outline"
+                size={14}
+                color={theme.colors.text.tertiary}
+                style={{ marginRight: theme.spacing.xs }}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.regular,
+                  color: theme.colors.text.secondary,
+                }}
+                numberOfLines={1}
+              >
+                {item.location}
+              </Text>
+            </View>
+          )}
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-            <Ionicons
-              name="cash-outline"
-              size={14}
-              color={theme.colors.text.tertiary}
-              style={{ marginRight: theme.spacing.xs }}
-            />
-            <Text
+          {item.salary && (
+            <View
               style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
+                flexDirection: "row",
+                alignItems: "center",
+                minWidth: "45%",
               }}
             >
-              {item.salary}
-            </Text>
-          </View>
+              <Ionicons
+                name="cash-outline"
+                size={14}
+                color={theme.colors.text.tertiary}
+                style={{ marginRight: theme.spacing.xs }}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.regular,
+                  color: theme.colors.text.secondary,
+                }}
+              >
+                {item.salary}
+              </Text>
+            </View>
+          )}
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-            <Ionicons
-              name="school-outline"
-              size={14}
-              color={theme.colors.text.tertiary}
-              style={{ marginRight: theme.spacing.xs }}
-            />
-            <Text
+          {item.education && (
+            <View
               style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
+                flexDirection: "row",
+                alignItems: "center",
+                minWidth: "45%",
               }}
-              numberOfLines={1}
             >
-              {item.education}
-            </Text>
-          </View>
+              <Ionicons
+                name="school-outline"
+                size={14}
+                color={theme.colors.text.tertiary}
+                style={{ marginRight: theme.spacing.xs }}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.regular,
+                  color: theme.colors.text.secondary,
+                }}
+                numberOfLines={1}
+              >
+                {item.education}
+              </Text>
+            </View>
+          )}
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              minWidth: "45%",
+            }}
+          >
             <Ionicons
               name="time-outline"
               size={14}
@@ -641,66 +719,75 @@ export default function EmployerCandidates() {
         </View>
 
         {/* Skills */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: theme.spacing.md }}>
-          {item.skills.slice(0, 4).map((skill, index) => (
-            <View
-              key={index}
-              style={{
-                backgroundColor: theme.colors.background.accent,
-                borderRadius: theme.borderRadius.sm,
-                paddingHorizontal: theme.spacing.sm,
-                paddingVertical: theme.spacing.xs,
-                marginRight: theme.spacing.xs,
-                marginBottom: theme.spacing.xs,
-                borderWidth: 1,
-                borderColor: theme.colors.primary.teal,
-              }}
-            >
-              <Text
+        {item.skills && item.skills.length > 0 && (
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              marginBottom: theme.spacing.md,
+            }}
+          >
+            {item.skills.slice(0, 4).map((skill, index) => (
+              <View
+                key={index}
                 style={{
-                  fontSize: theme.typography.sizes.xs,
-                  fontFamily: theme.typography.fonts.medium,
-                  color: theme.colors.primary.teal,
+                  backgroundColor: theme.colors.background.accent,
+                  borderRadius: theme.borderRadius.sm,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xs,
+                  marginRight: theme.spacing.xs,
+                  marginBottom: theme.spacing.xs,
+                  borderWidth: 1,
+                  borderColor: theme.colors.primary.teal,
                 }}
               >
-                {skill}
-              </Text>
-            </View>
-          ))}
-          {item.skills.length > 4 && (
-            <View
-              style={{
-                backgroundColor: theme.colors.neutral.lightGray,
-                borderRadius: theme.borderRadius.sm,
-                paddingHorizontal: theme.spacing.sm,
-                paddingVertical: theme.spacing.xs,
-                marginRight: theme.spacing.xs,
-                marginBottom: theme.spacing.xs,
-              }}
-            >
-              <Text
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.medium,
+                    color: theme.colors.primary.teal,
+                  }}
+                >
+                  {skill}
+                </Text>
+              </View>
+            ))}
+            {item.skills.length > 4 && (
+              <View
                 style={{
-                  fontSize: theme.typography.sizes.xs,
-                  fontFamily: theme.typography.fonts.medium,
-                  color: theme.colors.text.tertiary,
+                  backgroundColor: theme.colors.neutral.lightGray,
+                  borderRadius: theme.borderRadius.sm,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xs,
+                  marginRight: theme.spacing.xs,
+                  marginBottom: theme.spacing.xs,
                 }}
               >
-                +{item.skills.length - 4}
-              </Text>
-            </View>
-          )}
-        </View>
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.medium,
+                    color: theme.colors.text.tertiary,
+                  }}
+                >
+                  +{item.skills.length - 4}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Action based on status */}
-        {item.status === 'discovered' && (
+        {item.status === "discovered" && (
           <TouchableOpacity
+            onPress={() => handleSendProposal(item.user_id)}
             style={{
               backgroundColor: theme.colors.primary.teal,
               borderRadius: theme.borderRadius.md,
               paddingVertical: theme.spacing.sm,
-              alignItems: 'center',
-              flexDirection: 'row',
-              justifyContent: 'center',
+              alignItems: "center",
+              flexDirection: "row",
+              justifyContent: "center",
             }}
             activeOpacity={0.8}
           >
@@ -722,15 +809,15 @@ export default function EmployerCandidates() {
           </TouchableOpacity>
         )}
 
-        {item.status === 'proposal_sent' && (
+        {item.status === "proposal_sent" && (
           <View
             style={{
               backgroundColor: theme.colors.background.accent,
               borderRadius: theme.borderRadius.md,
               paddingVertical: theme.spacing.sm,
-              alignItems: 'center',
-              flexDirection: 'row',
-              justifyContent: 'center',
+              alignItems: "center",
+              flexDirection: "row",
+              justifyContent: "center",
             }}
           >
             <Ionicons
@@ -751,16 +838,16 @@ export default function EmployerCandidates() {
           </View>
         )}
 
-        {item.status === 'accepted' && (
+        {item.status === "accepted" && (
           <TouchableOpacity
-            onPress={() => router.push(`/employer/messages/${item.id}`)}
+            onPress={() => handleStartConversation(item.id)}
             style={{
               backgroundColor: theme.colors.status.success,
               borderRadius: theme.borderRadius.md,
               paddingVertical: theme.spacing.sm,
-              alignItems: 'center',
-              flexDirection: 'row',
-              justifyContent: 'center',
+              alignItems: "center",
+              flexDirection: "row",
+              justifyContent: "center",
             }}
             activeOpacity={0.8}
           >
@@ -783,55 +870,88 @@ export default function EmployerCandidates() {
         )}
 
         {/* Profile Completion Bar */}
-        <View style={{ marginTop: theme.spacing.md }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: theme.spacing.xs }}>
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.xs,
-                fontFamily: theme.typography.fonts.medium,
-                color: theme.colors.text.secondary,
-              }}
-            >
-              Profile Completion
-            </Text>
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.xs,
-                fontFamily: theme.typography.fonts.semiBold,
-                color: theme.colors.primary.teal,
-              }}
-            >
-              {item.profileCompletion}%
-            </Text>
-          </View>
-          <View
-            style={{
-              height: 4,
-              backgroundColor: theme.colors.neutral.lightGray,
-              borderRadius: 2,
-              overflow: 'hidden',
-            }}
-          >
+        {item.profileCompletion > 0 && (
+          <View style={{ marginTop: theme.spacing.md }}>
             <View
               style={{
-                width: `${item.profileCompletion}%`,
-                height: '100%',
-                backgroundColor: theme.colors.primary.teal,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: theme.spacing.xs,
               }}
-            />
+            >
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.xs,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: theme.colors.text.secondary,
+                }}
+              >
+                Profile Completion
+              </Text>
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.xs,
+                  fontFamily: theme.typography.fonts.semiBold,
+                  color: theme.colors.primary.teal,
+                }}
+              >
+                {item.profileCompletion}%
+              </Text>
+            </View>
+            <View
+              style={{
+                height: 4,
+                backgroundColor: theme.colors.neutral.lightGray,
+                borderRadius: 2,
+                overflow: "hidden",
+              }}
+            >
+              <View
+                style={{
+                  width: `${item.profileCompletion}%`,
+                  height: "100%",
+                  backgroundColor: theme.colors.primary.teal,
+                }}
+              />
+            </View>
           </View>
-        </View>
+        )}
       </TouchableOpacity>
     );
   };
+
+  // Loading State
+  const LoadingState = () => (
+    <View
+      style={{
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        paddingVertical: theme.spacing.xxxl,
+      }}
+    >
+      <ActivityIndicator size="large" color={theme.colors.primary.teal} />
+      <Text
+        style={{
+          marginTop: theme.spacing.md,
+          fontSize: theme.typography.sizes.base,
+          fontFamily: theme.typography.fonts.medium,
+          color: theme.colors.text.secondary,
+        }}
+      >
+        Finding matching candidates...
+      </Text>
+    </View>
+  );
 
   // Empty State Component
   const EmptyState = () => (
     <View
       style={{
         flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
+        justifyContent: "center",
+        alignItems: "center",
         paddingHorizontal: theme.spacing.xl,
         paddingVertical: theme.spacing.xxxl,
       }}
@@ -842,18 +962,22 @@ export default function EmployerCandidates() {
           height: 80,
           borderRadius: 40,
           backgroundColor: theme.colors.background.accent,
-          justifyContent: 'center',
-          alignItems: 'center',
+          justifyContent: "center",
+          alignItems: "center",
           marginBottom: theme.spacing.lg,
         }}
       >
         <Ionicons
           name={
-            searchQuery ? 'search-outline' :
-            activeFilter === 'discovered' ? 'person-add-outline' :
-            activeFilter === 'proposal_sent' ? 'paper-plane-outline' :
-            activeFilter === 'accepted' ? 'checkmark-circle-outline' :
-            'people-outline'
+            searchQuery
+              ? "search-outline"
+              : activeFilter === "discovered"
+              ? "person-add-outline"
+              : activeFilter === "proposal_sent"
+              ? "paper-plane-outline"
+              : activeFilter === "accepted"
+              ? "checkmark-circle-outline"
+              : "people-outline"
           }
           size={32}
           color={theme.colors.primary.teal}
@@ -866,14 +990,18 @@ export default function EmployerCandidates() {
           fontFamily: theme.typography.fonts.semiBold,
           color: theme.colors.text.primary,
           marginBottom: theme.spacing.sm,
-          textAlign: 'center',
+          textAlign: "center",
         }}
       >
-        {searchQuery ? 'No candidates found' :
-         activeFilter === 'discovered' ? 'No new discoveries' :
-         activeFilter === 'proposal_sent' ? 'No proposals sent' :
-         activeFilter === 'accepted' ? 'No accepted proposals' :
-         'No candidate matches yet'}
+        {searchQuery
+          ? "No candidates found"
+          : activeFilter === "discovered"
+          ? "No new discoveries"
+          : activeFilter === "proposal_sent"
+          ? "No proposals sent"
+          : activeFilter === "accepted"
+          ? "No accepted proposals"
+          : "No candidate matches yet"}
       </Text>
 
       <Text
@@ -881,32 +1009,77 @@ export default function EmployerCandidates() {
           fontSize: theme.typography.sizes.base,
           fontFamily: theme.typography.fonts.regular,
           color: theme.colors.text.secondary,
-          textAlign: 'center',
+          textAlign: "center",
           lineHeight: theme.typography.sizes.base * 1.4,
+          marginBottom: theme.spacing.lg,
         }}
       >
-        {searchQuery ? 'Try adjusting your search terms or filters' :
-         activeFilter === 'discovered' ? 'New candidate matches will appear here as they become available' :
-         activeFilter === 'proposal_sent' ? 'Candidates you send proposals to will appear here' :
-         activeFilter === 'accepted' ? 'Candidates who accept your proposals will appear here' :
-         'Create job postings to start discovering matching candidates'}
+        {searchQuery
+          ? "Try adjusting your search terms or filters"
+          : activeFilter === "discovered"
+          ? "New candidate matches will appear here as they become available"
+          : activeFilter === "proposal_sent"
+          ? "Candidates you send proposals to will appear here"
+          : activeFilter === "accepted"
+          ? "Candidates who accept your proposals will appear here"
+          : "Create job postings to start discovering matching candidates"}
       </Text>
+
+      {!searchQuery && activeFilter === "all" && (
+        <TouchableOpacity
+          onPress={() => router.push("/post-job")}
+          style={{
+            backgroundColor: theme.colors.primary.teal,
+            borderRadius: theme.borderRadius.lg,
+            paddingHorizontal: theme.spacing.xl,
+            paddingVertical: theme.spacing.md,
+          }}
+          activeOpacity={0.8}
+        >
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.base,
+              fontFamily: theme.typography.fonts.semiBold,
+              color: theme.colors.neutral.white,
+            }}
+          >
+            Post a Job
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
+  // Footer Loading Indicator
+  const FooterLoadingIndicator = () => {
+    if (!isLoadingMore) return null;
 
-  const filteredCandidates = getFilteredCandidates();
-
+    return (
+      <View style={{ paddingVertical: theme.spacing.lg, alignItems: "center" }}>
+        <ActivityIndicator size="small" color={theme.colors.primary.teal} />
+        <Text
+          style={{
+            marginTop: theme.spacing.sm,
+            fontSize: theme.typography.sizes.sm,
+            fontFamily: theme.typography.fonts.regular,
+            color: theme.colors.text.tertiary,
+          }}
+        >
+          Loading more candidates...
+        </Text>
+      </View>
+    );
+  };
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background.primary }}>
       {/* Background Gradient */}
       <LinearGradient
         colors={[
           theme.colors.background.accent,
-          'rgba(27, 163, 163, 0.02)',
+          "rgba(27, 163, 163, 0.02)",
           theme.colors.background.primary,
         ]}
         style={{
-          position: 'absolute',
+          position: "absolute",
           left: 0,
           right: 0,
           top: 0,
@@ -914,14 +1087,15 @@ export default function EmployerCandidates() {
         }}
         locations={[0, 0.3, 1]}
       />
-
       <Header />
-      
-      {filteredCandidates.length === 0 ? (
+
+      {isLoading ? (
+        <LoadingState />
+      ) : candidates.length === 0 ? (
         <EmptyState />
       ) : (
         <FlatList
-          data={filteredCandidates}
+          data={candidates}
           renderItem={({ item }) => <CandidateItem item={item} />}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
@@ -934,6 +1108,9 @@ export default function EmployerCandidates() {
               tintColor={theme.colors.primary.teal}
             />
           }
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={FooterLoadingIndicator}
         />
       )}
     </View>

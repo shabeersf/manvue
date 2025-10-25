@@ -1,9 +1,12 @@
+import apiService from '@/services/apiService';
 import theme from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Dimensions,
   Modal,
   ScrollView,
@@ -16,85 +19,108 @@ import {
 const { width } = Dimensions.get('window');
 
 export default function JobProposalDetails() {
-  const { id } = useLocalSearchParams();
-  const [proposalStatus, setProposalStatus] = useState('pending'); // 'pending', 'accepted', 'rejected'
+  const { id } = useLocalSearchParams(); // application_id
+  const [proposalStatus, setProposalStatus] = useState('pending');
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [proposalData, setProposalData] = useState(null);
 
-  // Mock job proposal data - replace with real API call using the id
-  const [proposalData] = useState({
-    id: '1',
-    companyName: 'TechCorp Solutions',
-    position: 'Senior React Developer',
-    location: 'Mumbai, Remote',
-    employmentType: 'Full-time',
-    experience: '3-5 years',
-    salary: '₹8,00,000 - ₹15,00,000',
-    matchPercentage: 95,
-    skills: ['React', 'Node.js', 'TypeScript', 'MongoDB', 'AWS'],
-    sentTime: '2 hours ago',
-    description: 'We are impressed with your profile and would like to offer you the position of Senior React Developer. You will be responsible for developing and maintaining web applications using React.js and related technologies.',
-    responsibilities: [
-      'Develop and maintain React.js applications',
-      'Collaborate with cross-functional teams to define and implement features',
-      'Write clean, maintainable, and efficient code',
-      'Participate in code reviews and maintain coding standards',
-      'Optimize applications for maximum speed and scalability',
-      'Stay up-to-date with emerging technologies and industry trends'
-    ],
-    requirements: [
-      'Bachelor\'s degree in Computer Science or related field',
-      '3+ years of experience with React.js',
-      'Strong knowledge of JavaScript ES6+',
-      'Experience with state management (Redux/Context API)',
-      'Familiarity with RESTful APIs',
-      'Knowledge of version control systems (Git)',
-      'Strong problem-solving skills and attention to detail'
-    ],
-    benefits: [
-      'Competitive salary and performance bonuses',
-      'Comprehensive health insurance',
-      'Flexible working hours and remote work options',
-      'Professional development opportunities',
-      'Modern office environment with latest technology',
-      'Team outings and company events'
-    ],
-    companyInfo: {
-      industry: 'Information Technology',
-      size: '500-1000 employees',
-      founded: '2015',
-      website: 'www.techcorpsolutions.com',
-      about: 'TechCorp Solutions is a leading software development company specializing in web and mobile applications. We work with clients across various industries to deliver innovative technology solutions.'
-    },
-    proposalMessage: 'Hi! We have reviewed your profile and believe you would be a great fit for our Senior React Developer position. We are excited about the possibility of having you join our team and contribute to our innovative projects.',
-    joiningDate: '2025-01-15',
-    validUntil: '2025-01-10'
-  });
+  // Fetch proposal details on mount
+  useEffect(() => {
+    fetchProposalDetails();
+  }, [id]);
+
+  const fetchProposalDetails = async () => {
+    try {
+      setLoading(true);
+      const result = await apiService.getApplicationDetails(parseInt(id));
+      
+      if (result.success) {
+        setProposalData(result.data);
+        setProposalStatus(result.data.proposalStatus || 'pending');
+      } else {
+        Alert.alert('Error', result.message || 'Failed to load proposal details');
+        router.back();
+      }
+    } catch (error) {
+      console.error('Error fetching proposal:', error);
+      Alert.alert('Error', 'Something went wrong');
+      router.back();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAccept = async () => {
     setIsProcessing(true);
-    // Mock API call
-    setTimeout(() => {
+    try {
+      const result = await apiService.respondToProposal(
+        parseInt(id),
+        'accept',
+        'I am interested in this opportunity!'
+      );
+
+      if (result.success) {
+        setProposalStatus('accepted');
+        setShowAcceptModal(false);
+        Alert.alert('Success', result.message || 'Proposal accepted successfully!');
+      } else {
+        Alert.alert('Error', result.message || 'Failed to accept proposal');
+      }
+    } catch (error) {
+      console.error('Error accepting proposal:', error);
+      Alert.alert('Error', 'Something went wrong');
+    } finally {
       setIsProcessing(false);
-      setProposalStatus('accepted');
-      setShowAcceptModal(false);
-    }, 2000);
+    }
   };
 
   const handleReject = async () => {
     setIsProcessing(true);
-    // Mock API call
-    setTimeout(() => {
+    try {
+      const result = await apiService.respondToProposal(
+        parseInt(id),
+        'reject',
+        'Thank you for your interest, but I am not interested at this time.'
+      );
+
+      if (result.success) {
+        setProposalStatus('rejected');
+        setShowRejectModal(false);
+        Alert.alert('Success', result.message || 'Proposal rejected');
+      } else {
+        Alert.alert('Error', result.message || 'Failed to reject proposal');
+      }
+    } catch (error) {
+      console.error('Error rejecting proposal:', error);
+      Alert.alert('Error', 'Something went wrong');
+    } finally {
       setIsProcessing(false);
-      setProposalStatus('rejected');
-      setShowRejectModal(false);
-    }, 2000);
+    }
   };
 
   const handleGoToMessages = () => {
     router.push('/jobseeker/messages');
   };
+
+  // Loading State
+  if (loading || !proposalData) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors.background.primary, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={theme.colors.primary.teal} />
+        <Text style={{ 
+          marginTop: theme.spacing.md,
+          fontSize: theme.typography.sizes.base,
+          fontFamily: theme.typography.fonts.medium,
+          color: theme.colors.text.secondary 
+        }}>
+          Loading proposal details...
+        </Text>
+      </View>
+    );
+  }
 
   // Header Component
   const Header = () => (
@@ -222,208 +248,75 @@ export default function JobProposalDetails() {
         <Text
           style={{
             fontSize: theme.typography.sizes.xs,
-            fontFamily: theme.typography.fonts.medium,
+            fontFamily: theme.typography.fonts.semiBold,
             color: theme.colors.primary.teal,
           }}
         >
-          Job Proposal • {proposalData.sentTime}
+          Proposal Received {proposalData.sentTime}
         </Text>
       </View>
 
-      {/* Company header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: theme.spacing.md }}>
-        <View
-          style={{
-            width: 60,
-            height: 60,
-            borderRadius: 30,
-            backgroundColor: theme.colors.background.accent,
-            justifyContent: 'center',
-            alignItems: 'center',
-            marginRight: theme.spacing.md,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.lg,
-              fontFamily: theme.typography.fonts.bold,
-              color: theme.colors.primary.teal,
-            }}
-          >
-            {proposalData.companyName.charAt(0)}
-          </Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.lg,
-              fontFamily: theme.typography.fonts.bold,
-              color: theme.colors.text.primary,
-              marginBottom: theme.spacing.xs,
-            }}
-          >
-            {proposalData.position}
-          </Text>
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.base,
-              fontFamily: theme.typography.fonts.semiBold,
-              color: theme.colors.primary.teal,
-            }}
-          >
-            {proposalData.companyName}
-          </Text>
-        </View>
-      </View>
-
-      {/* Proposal message */}
-      <View
+      {/* Company name */}
+      <Text
         style={{
-          backgroundColor: theme.colors.background.accent,
-          borderRadius: theme.borderRadius.md,
-          padding: theme.spacing.md,
-          marginBottom: theme.spacing.md,
-          borderLeftWidth: 3,
-          borderLeftColor: theme.colors.primary.teal,
+          fontSize: theme.typography.sizes.xl,
+          fontFamily: theme.typography.fonts.bold,
+          color: theme.colors.text.primary,
+          marginBottom: theme.spacing.xs,
         }}
       >
-        <Text
-          style={{
-            fontSize: theme.typography.sizes.sm,
-            fontFamily: theme.typography.fonts.regular,
-            color: theme.colors.text.secondary,
-            lineHeight: theme.typography.sizes.sm * 1.4,
-            fontStyle: 'italic',
-          }}
-        >
-          "{proposalData.proposalMessage}"
-        </Text>
-      </View>
+        {proposalData.companyName}
+      </Text>
 
-      {/* Job info grid */}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.md }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-          <Ionicons
-            name="location-outline"
-            size={16}
-            color={theme.colors.text.tertiary}
-            style={{ marginRight: theme.spacing.xs }}
-          />
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.sm,
-              fontFamily: theme.typography.fonts.regular,
-              color: theme.colors.text.secondary,
-            }}
-          >
+      {/* Position */}
+      <Text
+        style={{
+          fontSize: theme.typography.sizes.lg,
+          fontFamily: theme.typography.fonts.semiBold,
+          color: theme.colors.primary.teal,
+          marginBottom: theme.spacing.md,
+        }}
+      >
+        {proposalData.position}
+      </Text>
+
+      {/* Job details row */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.md, marginBottom: theme.spacing.md }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Ionicons name="location-outline" size={16} color={theme.colors.text.tertiary} style={{ marginRight: theme.spacing.xs }} />
+          <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary }}>
             {proposalData.location}
           </Text>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-          <Ionicons
-            name="briefcase-outline"
-            size={16}
-            color={theme.colors.text.tertiary}
-            style={{ marginRight: theme.spacing.xs }}
-          />
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.sm,
-              fontFamily: theme.typography.fonts.regular,
-              color: theme.colors.text.secondary,
-            }}
-          >
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Ionicons name="briefcase-outline" size={16} color={theme.colors.text.tertiary} style={{ marginRight: theme.spacing.xs }} />
+          <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary }}>
             {proposalData.employmentType}
           </Text>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-          <Ionicons
-            name="time-outline"
-            size={16}
-            color={theme.colors.text.tertiary}
-            style={{ marginRight: theme.spacing.xs }}
-          />
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.sm,
-              fontFamily: theme.typography.fonts.regular,
-              color: theme.colors.text.secondary,
-            }}
-          >
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Ionicons name="time-outline" size={16} color={theme.colors.text.tertiary} style={{ marginRight: theme.spacing.xs }} />
+          <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary }}>
             {proposalData.experience}
-          </Text>
-        </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-          <Ionicons
-            name="cash-outline"
-            size={16}
-            color={theme.colors.text.tertiary}
-            style={{ marginRight: theme.spacing.xs }}
-          />
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.sm,
-              fontFamily: theme.typography.fonts.regular,
-              color: theme.colors.text.secondary,
-            }}
-          >
-            {proposalData.salary}
-          </Text>
-        </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-          <Ionicons
-            name="calendar-outline"
-            size={16}
-            color={theme.colors.text.tertiary}
-            style={{ marginRight: theme.spacing.xs }}
-          />
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.sm,
-              fontFamily: theme.typography.fonts.regular,
-              color: theme.colors.text.secondary,
-            }}
-          >
-            Join by {proposalData.joiningDate}
-          </Text>
-        </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-          <Ionicons
-            name="hourglass-outline"
-            size={16}
-            color={theme.colors.text.tertiary}
-            style={{ marginRight: theme.spacing.xs }}
-          />
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.sm,
-              fontFamily: theme.typography.fonts.regular,
-              color: theme.colors.text.secondary,
-            }}
-          >
-            Valid until {proposalData.validUntil}
           </Text>
         </View>
       </View>
 
+      {/* Salary */}
+      {proposalData.salary && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: theme.spacing.md }}>
+          <Ionicons name="cash-outline" size={18} color={theme.colors.primary.teal} style={{ marginRight: theme.spacing.sm }} />
+          <Text style={{ fontSize: theme.typography.sizes.base, fontFamily: theme.typography.fonts.semiBold, color: theme.colors.text.primary }}>
+            {proposalData.salary}
+          </Text>
+        </View>
+      )}
+
       {/* Skills */}
-      <View style={{ marginTop: theme.spacing.md }}>
-        <Text
-          style={{
-            fontSize: theme.typography.sizes.sm,
-            fontFamily: theme.typography.fonts.semiBold,
-            color: theme.colors.text.primary,
-            marginBottom: theme.spacing.sm,
-          }}
-        >
-          Required Skills
-        </Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+      {proposalData.skills && proposalData.skills.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs }}>
           {proposalData.skills.map((skill, index) => (
             <View
               key={index}
@@ -432,155 +325,106 @@ export default function JobProposalDetails() {
                 borderRadius: theme.borderRadius.sm,
                 paddingHorizontal: theme.spacing.sm,
                 paddingVertical: theme.spacing.xs,
-                marginRight: theme.spacing.xs,
-                marginBottom: theme.spacing.xs,
                 borderWidth: 1,
                 borderColor: theme.colors.primary.teal,
               }}
             >
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.xs,
-                  fontFamily: theme.typography.fonts.medium,
-                  color: theme.colors.primary.teal,
-                }}
-              >
+              <Text style={{ fontSize: theme.typography.sizes.xs, fontFamily: theme.typography.fonts.medium, color: theme.colors.primary.teal }}>
                 {skill}
               </Text>
             </View>
           ))}
         </View>
-      </View>
+      )}
     </View>
   );
 
   // Status Message Component
   const StatusMessage = () => {
-    if (proposalStatus === 'pending') return null;
-
-    return (
-      <View
-        style={{
-          backgroundColor: theme.colors.background.card,
-          borderRadius: theme.borderRadius.xl,
-          padding: theme.spacing.lg,
-          margin: theme.spacing.lg,
-          marginTop: 0,
-          borderWidth: 2,
-          borderColor: proposalStatus === 'accepted' ? theme.colors.status.success : theme.colors.status.error,
-        }}
-      >
-        <View style={{ alignItems: 'center' }}>
-          <View
-            style={{
-              width: 60,
-              height: 60,
-              borderRadius: 30,
-              backgroundColor: proposalStatus === 'accepted' ? theme.colors.status.success : theme.colors.status.error,
-              justifyContent: 'center',
-              alignItems: 'center',
-              marginBottom: theme.spacing.md,
-            }}
-          >
-            <Ionicons
-              name={proposalStatus === 'accepted' ? "checkmark" : "close"}
-              size={28}
-              color={theme.colors.neutral.white}
-            />
-          </View>
-          
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.lg,
-              fontFamily: theme.typography.fonts.bold,
-              color: theme.colors.text.primary,
-              marginBottom: theme.spacing.sm,
-              textAlign: 'center',
-            }}
-          >
-            {proposalStatus === 'accepted' ? 'Proposal Accepted!' : 'Proposal Rejected'}
-          </Text>
-          
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.base,
-              fontFamily: theme.typography.fonts.regular,
-              color: theme.colors.text.secondary,
-              textAlign: 'center',
-              lineHeight: theme.typography.sizes.base * 1.4,
-              marginBottom: theme.spacing.lg,
-            }}
-          >
-            {proposalStatus === 'accepted' 
-              ? `Congratulations! You have accepted the job proposal from ${proposalData.companyName}. Please check your messages for further details and next steps.`
-              : `You have rejected the job proposal from ${proposalData.companyName}. This proposal is no longer active.`
-            }
-          </Text>
-
-          {proposalStatus === 'accepted' && (
-            <TouchableOpacity
-              onPress={handleGoToMessages}
-              style={{
-                borderRadius: theme.borderRadius.lg,
-                overflow: 'hidden',
-                width: '100%',
-              }}
-              activeOpacity={0.9}
-            >
-              <LinearGradient
-                colors={[theme.colors.primary.teal, theme.colors.secondary.darkTeal]}
-                style={{
-                  paddingVertical: theme.spacing.md,
-                  alignItems: 'center',
-                  flexDirection: 'row',
-                  justifyContent: 'center',
-                }}
-              >
-                <Ionicons
-                  name="chatbubbles-outline"
-                  size={18}
-                  color={theme.colors.neutral.white}
-                  style={{ marginRight: theme.spacing.sm }}
-                />
-                <Text
-                  style={{
-                    fontSize: theme.typography.sizes.base,
-                    fontFamily: theme.typography.fonts.semiBold,
-                    color: theme.colors.neutral.white,
-                  }}
-                >
-                  Go to Messages
-                </Text>
-              </LinearGradient>
+    if (proposalStatus === 'accepted') {
+      return (
+        <View
+          style={{
+            backgroundColor: theme.colors.status.success + '15',
+            borderWidth: 1,
+            borderColor: theme.colors.status.success,
+            borderRadius: theme.borderRadius.lg,
+            padding: theme.spacing.lg,
+            marginHorizontal: theme.spacing.lg,
+            marginBottom: theme.spacing.lg,
+            flexDirection: 'row',
+            alignItems: 'center',
+          }}
+        >
+          <Ionicons name="checkmark-circle" size={24} color={theme.colors.status.success} style={{ marginRight: theme.spacing.md }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: theme.typography.sizes.base, fontFamily: theme.typography.fonts.semiBold, color: theme.colors.status.success, marginBottom: 4 }}>
+              Proposal Accepted!
+            </Text>
+            <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary }}>
+              The employer has been notified. They will contact you soon.
+            </Text>
+            <TouchableOpacity onPress={handleGoToMessages} style={{ marginTop: theme.spacing.sm }}>
+              <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.semiBold, color: theme.colors.primary.teal }}>
+                Go to Messages →
+              </Text>
             </TouchableOpacity>
-          )}
+          </View>
         </View>
+      );
+    } else if (proposalStatus === 'rejected') {
+      return (
+        <View
+          style={{
+            backgroundColor: theme.colors.status.error + '15',
+            borderWidth: 1,
+            borderColor: theme.colors.status.error,
+            borderRadius: theme.borderRadius.lg,
+            padding: theme.spacing.lg,
+            marginHorizontal: theme.spacing.lg,
+            marginBottom: theme.spacing.lg,
+            flexDirection: 'row',
+            alignItems: 'center',
+          }}
+        >
+          <Ionicons name="close-circle" size={24} color={theme.colors.status.error} style={{ marginRight: theme.spacing.md }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: theme.typography.sizes.base, fontFamily: theme.typography.fonts.semiBold, color: theme.colors.status.error, marginBottom: 4 }}>
+              Proposal Declined
+            </Text>
+            <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary }}>
+              You have declined this job proposal. The employer has been notified.
+            </Text>
+          </View>
+        </View>
+      );
+    }
+    return null;
+  };
+
+  // Proposal Message Section (Cover Letter)
+  const ProposalMessage = () => {
+    if (!proposalData.proposalMessage) return null;
+    
+    return (
+      <View style={{ backgroundColor: theme.colors.background.card, marginHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md, borderRadius: theme.borderRadius.xl, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border.light }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: theme.spacing.md }}>
+          <Ionicons name="document-text-outline" size={20} color={theme.colors.primary.teal} style={{ marginRight: theme.spacing.sm }} />
+          <Text style={{ fontSize: theme.typography.sizes.md, fontFamily: theme.typography.fonts.semiBold, color: theme.colors.text.primary }}>
+            Proposal Letter
+          </Text>
+        </View>
+        <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary, lineHeight: theme.typography.sizes.sm * 1.6 }}>
+          {proposalData.proposalMessage}
+        </Text>
       </View>
     );
   };
 
   // Section Component
   const Section = ({ title, children }) => (
-    <View
-      style={{
-        backgroundColor: theme.colors.background.card,
-        borderRadius: theme.borderRadius.lg,
-        padding: theme.spacing.lg,
-        margin: theme.spacing.lg,
-        marginTop: 0,
-        borderWidth: 1,
-        borderColor: theme.colors.border.light,
-        opacity: proposalStatus === 'rejected' ? 0.6 : 1,
-      }}
-    >
-      <Text
-        style={{
-          fontSize: theme.typography.sizes.md,
-          fontFamily: theme.typography.fonts.bold,
-          color: theme.colors.text.primary,
-          marginBottom: theme.spacing.md,
-        }}
-      >
+    <View style={{ backgroundColor: theme.colors.background.card, marginHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md, borderRadius: theme.borderRadius.xl, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border.light }}>
+      <Text style={{ fontSize: theme.typography.sizes.md, fontFamily: theme.typography.fonts.semiBold, color: theme.colors.text.primary, marginBottom: theme.spacing.md }}>
         {title}
       </Text>
       {children}
@@ -588,23 +432,10 @@ export default function JobProposalDetails() {
   );
 
   // List Item Component
-  const ListItem = ({ text, icon = "checkmark-circle-outline" }) => (
+  const ListItem = ({ text, icon = "arrow-forward-outline" }) => (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: theme.spacing.sm }}>
-      <Ionicons
-        name={icon}
-        size={16}
-        color={theme.colors.primary.teal}
-        style={{ marginRight: theme.spacing.sm, marginTop: 2 }}
-      />
-      <Text
-        style={{
-          fontSize: theme.typography.sizes.sm,
-          fontFamily: theme.typography.fonts.regular,
-          color: theme.colors.text.secondary,
-          flex: 1,
-          lineHeight: theme.typography.sizes.sm * 1.4,
-        }}
-      >
+      <Ionicons name={icon} size={16} color={theme.colors.primary.teal} style={{ marginRight: theme.spacing.sm, marginTop: 2 }} />
+      <Text style={{ flex: 1, fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary, lineHeight: theme.typography.sizes.sm * 1.5 }}>
         {text}
       </Text>
     </View>
@@ -612,91 +443,29 @@ export default function JobProposalDetails() {
 
   // Accept Modal
   const AcceptModal = () => (
-    <Modal
-      visible={showAcceptModal}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setShowAcceptModal(false)}
-    >
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          justifyContent: 'center',
-          alignItems: 'center',
-          paddingHorizontal: theme.spacing.lg,
-        }}
-      >
-        <View
-          style={{
-            backgroundColor: theme.colors.background.card,
-            borderRadius: theme.borderRadius.xl,
-            width: '100%',
-            maxWidth: 400,
-            padding: theme.spacing.xl,
-          }}
-        >
+    <Modal visible={showAcceptModal} transparent={true} animationType="fade" onRequestClose={() => setShowAcceptModal(false)}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: theme.spacing.lg }}>
+        <View style={{ backgroundColor: theme.colors.background.card, borderRadius: theme.borderRadius.xl, padding: theme.spacing.xl, width: '100%', maxWidth: 400 }}>
           <View style={{ alignItems: 'center', marginBottom: theme.spacing.lg }}>
-            <View
-              style={{
-                width: 60,
-                height: 60,
-                borderRadius: 30,
-                backgroundColor: theme.colors.status.success,
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginBottom: theme.spacing.md,
-              }}
-            >
-              <Ionicons
-                name="checkmark"
-                size={28}
-                color={theme.colors.neutral.white}
-              />
+            <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: theme.colors.status.success + '15', justifyContent: 'center', alignItems: 'center', marginBottom: theme.spacing.md }}>
+              <Ionicons name="checkmark-circle" size={32} color={theme.colors.status.success} />
             </View>
-            
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.lg,
-                fontFamily: theme.typography.fonts.bold,
-                color: theme.colors.text.primary,
-                marginBottom: theme.spacing.xs,
-                textAlign: 'center',
-              }}
-            >
-              Accept Job Proposal
+            <Text style={{ fontSize: theme.typography.sizes.lg, fontFamily: theme.typography.fonts.bold, color: theme.colors.text.primary, marginBottom: theme.spacing.xs, textAlign: 'center' }}>
+              Accept this Proposal?
             </Text>
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
-                textAlign: 'center',
-              }}
-            >
-              Are you sure you want to accept this job proposal from {proposalData.companyName}?
+            <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary, textAlign: 'center' }}>
+              By accepting, you're showing interest in this position. The employer will be able to contact you directly.
             </Text>
           </View>
 
           <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
             <TouchableOpacity
               onPress={() => setShowAcceptModal(false)}
-              style={{
-                flex: 1,
-                backgroundColor: theme.colors.neutral.lightGray,
-                borderRadius: theme.borderRadius.lg,
-                paddingVertical: theme.spacing.md,
-                alignItems: 'center',
-              }}
+              disabled={isProcessing}
+              style={{ flex: 1, backgroundColor: theme.colors.neutral.lightGray, borderRadius: theme.borderRadius.lg, paddingVertical: theme.spacing.md, alignItems: 'center' }}
               activeOpacity={0.8}
             >
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.base,
-                  fontFamily: theme.typography.fonts.semiBold,
-                  color: theme.colors.text.secondary,
-                }}
-              >
+              <Text style={{ fontSize: theme.typography.sizes.base, fontFamily: theme.typography.fonts.semiBold, color: theme.colors.text.secondary }}>
                 Cancel
               </Text>
             </TouchableOpacity>
@@ -704,38 +473,11 @@ export default function JobProposalDetails() {
             <TouchableOpacity
               onPress={handleAccept}
               disabled={isProcessing}
-              style={{
-                flex: 1,
-                backgroundColor: theme.colors.status.success,
-                borderRadius: theme.borderRadius.lg,
-                paddingVertical: theme.spacing.md,
-                alignItems: 'center',
-                flexDirection: 'row',
-                justifyContent: 'center',
-              }}
-              activeOpacity={0.9}
+              style={{ flex: 1, backgroundColor: theme.colors.status.success, borderRadius: theme.borderRadius.lg, paddingVertical: theme.spacing.md, alignItems: 'center' }}
+              activeOpacity={0.8}
             >
-              {isProcessing && (
-                <View
-                  style={{
-                    width: 16,
-                    height: 16,
-                    borderRadius: 8,
-                    borderWidth: 2,
-                    borderColor: theme.colors.neutral.white,
-                    borderTopColor: 'transparent',
-                    marginRight: theme.spacing.sm,
-                  }}
-                />
-              )}
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.base,
-                  fontFamily: theme.typography.fonts.semiBold,
-                  color: theme.colors.neutral.white,
-                }}
-              >
-                {isProcessing ? 'Accepting...' : 'Accept'}
+              <Text style={{ fontSize: theme.typography.sizes.base, fontFamily: theme.typography.fonts.semiBold, color: theme.colors.neutral.white }}>
+                {isProcessing ? 'Accepting...' : 'Yes, Accept'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -746,91 +488,29 @@ export default function JobProposalDetails() {
 
   // Reject Modal
   const RejectModal = () => (
-    <Modal
-      visible={showRejectModal}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setShowRejectModal(false)}
-    >
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          justifyContent: 'center',
-          alignItems: 'center',
-          paddingHorizontal: theme.spacing.lg,
-        }}
-      >
-        <View
-          style={{
-            backgroundColor: theme.colors.background.card,
-            borderRadius: theme.borderRadius.xl,
-            width: '100%',
-            maxWidth: 400,
-            padding: theme.spacing.xl,
-          }}
-        >
+    <Modal visible={showRejectModal} transparent={true} animationType="fade" onRequestClose={() => setShowRejectModal(false)}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: theme.spacing.lg }}>
+        <View style={{ backgroundColor: theme.colors.background.card, borderRadius: theme.borderRadius.xl, padding: theme.spacing.xl, width: '100%', maxWidth: 400 }}>
           <View style={{ alignItems: 'center', marginBottom: theme.spacing.lg }}>
-            <View
-              style={{
-                width: 60,
-                height: 60,
-                borderRadius: 30,
-                backgroundColor: theme.colors.status.error,
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginBottom: theme.spacing.md,
-              }}
-            >
-              <Ionicons
-                name="close"
-                size={28}
-                color={theme.colors.neutral.white}
-              />
+            <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: theme.colors.status.error + '15', justifyContent: 'center', alignItems: 'center', marginBottom: theme.spacing.md }}>
+              <Ionicons name="close-circle" size={32} color={theme.colors.status.error} />
             </View>
-            
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.lg,
-                fontFamily: theme.typography.fonts.bold,
-                color: theme.colors.text.primary,
-                marginBottom: theme.spacing.xs,
-                textAlign: 'center',
-              }}
-            >
-              Reject Job Proposal
+            <Text style={{ fontSize: theme.typography.sizes.lg, fontFamily: theme.typography.fonts.bold, color: theme.colors.text.primary, marginBottom: theme.spacing.xs, textAlign: 'center' }}>
+              Decline this Proposal?
             </Text>
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
-                textAlign: 'center',
-              }}
-            >
-              Are you sure you want to reject this job proposal? This action cannot be undone.
+            <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary, textAlign: 'center' }}>
+              The employer will be notified that you're not interested in this position.
             </Text>
           </View>
 
           <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
             <TouchableOpacity
               onPress={() => setShowRejectModal(false)}
-              style={{
-                flex: 1,
-                backgroundColor: theme.colors.neutral.lightGray,
-                borderRadius: theme.borderRadius.lg,
-                paddingVertical: theme.spacing.md,
-                alignItems: 'center',
-              }}
+              disabled={isProcessing}
+              style={{ flex: 1, backgroundColor: theme.colors.neutral.lightGray, borderRadius: theme.borderRadius.lg, paddingVertical: theme.spacing.md, alignItems: 'center' }}
               activeOpacity={0.8}
             >
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.base,
-                  fontFamily: theme.typography.fonts.semiBold,
-                  color: theme.colors.text.secondary,
-                }}
-              >
+              <Text style={{ fontSize: theme.typography.sizes.base, fontFamily: theme.typography.fonts.semiBold, color: theme.colors.text.secondary }}>
                 Cancel
               </Text>
             </TouchableOpacity>
@@ -838,37 +518,10 @@ export default function JobProposalDetails() {
             <TouchableOpacity
               onPress={handleReject}
               disabled={isProcessing}
-              style={{
-                flex: 1,
-                backgroundColor: theme.colors.status.error,
-                borderRadius: theme.borderRadius.lg,
-                paddingVertical: theme.spacing.md,
-                alignItems: 'center',
-                flexDirection: 'row',
-                justifyContent: 'center',
-              }}
-              activeOpacity={0.9}
+              style={{ flex: 1, backgroundColor: theme.colors.status.error, borderRadius: theme.borderRadius.lg, paddingVertical: theme.spacing.md, alignItems: 'center' }}
+              activeOpacity={0.8}
             >
-              {isProcessing && (
-                <View
-                  style={{
-                    width: 16,
-                    height: 16,
-                    borderRadius: 8,
-                    borderWidth: 2,
-                    borderColor: theme.colors.neutral.white,
-                    borderTopColor: 'transparent',
-                    marginRight: theme.spacing.sm,
-                  }}
-                />
-              )}
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.base,
-                  fontFamily: theme.typography.fonts.semiBold,
-                  color: theme.colors.neutral.white,
-                }}
-              >
+              <Text style={{ fontSize: theme.typography.sizes.base, fontFamily: theme.typography.fonts.semiBold, color: theme.colors.neutral.white }}>
                 {isProcessing ? 'Rejecting...' : 'Reject'}
               </Text>
             </TouchableOpacity>
@@ -912,87 +565,109 @@ export default function JobProposalDetails() {
         
         <StatusMessage />
 
+        <ProposalMessage />
+
         {proposalStatus !== 'rejected' && (
           <>
-            <Section title="Job Description">
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.sm,
-                  fontFamily: theme.typography.fonts.regular,
-                  color: theme.colors.text.secondary,
-                  lineHeight: theme.typography.sizes.sm * 1.5,
-                }}
-              >
-                {proposalData.description}
-              </Text>
-            </Section>
+            {proposalData.description && (
+              <Section title="Job Description">
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.sm,
+                    fontFamily: theme.typography.fonts.regular,
+                    color: theme.colors.text.secondary,
+                    lineHeight: theme.typography.sizes.sm * 1.5,
+                  }}
+                >
+                  {proposalData.description}
+                </Text>
+              </Section>
+            )}
 
-            <Section title="Key Responsibilities">
-              {proposalData.responsibilities.map((item, index) => (
-                <ListItem key={index} text={item} />
-              ))}
-            </Section>
+            {proposalData.responsibilities && proposalData.responsibilities.length > 0 && (
+              <Section title="Key Responsibilities">
+                {proposalData.responsibilities.map((item, index) => (
+                  <ListItem key={index} text={item} />
+                ))}
+              </Section>
+            )}
 
-            <Section title="Requirements">
-              {proposalData.requirements.map((item, index) => (
-                <ListItem key={index} text={item} icon="checkmark-outline" />
-              ))}
-            </Section>
+            {proposalData.requirements && proposalData.requirements.length > 0 && (
+              <Section title="Requirements">
+                {proposalData.requirements.map((item, index) => (
+                  <ListItem key={index} text={item} icon="checkmark-outline" />
+                ))}
+              </Section>
+            )}
 
-            <Section title="Benefits & Perks">
-              {proposalData.benefits.map((item, index) => (
-                <ListItem key={index} text={item} icon="gift-outline" />
-              ))}
-            </Section>
+            {proposalData.benefits && proposalData.benefits.length > 0 && (
+              <Section title="Benefits & Perks">
+                {proposalData.benefits.map((item, index) => (
+                  <ListItem key={index} text={item} icon="gift-outline" />
+                ))}
+              </Section>
+            )}
 
-            <Section title="About Company">
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.sm,
-                  fontFamily: theme.typography.fonts.regular,
-                  color: theme.colors.text.secondary,
-                  lineHeight: theme.typography.sizes.sm * 1.5,
-                  marginBottom: theme.spacing.md,
-                }}
-              >
-                {proposalData.companyInfo.about}
-              </Text>
-              
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.md }}>
-                <View style={{ minWidth: '45%' }}>
-                  <Text style={{ fontSize: theme.typography.sizes.xs, fontFamily: theme.typography.fonts.medium, color: theme.colors.text.tertiary }}>
-                    Industry
+            {proposalData.companyInfo && (
+              <Section title="About Company">
+                {proposalData.companyInfo.about && (
+                  <Text
+                    style={{
+                      fontSize: theme.typography.sizes.sm,
+                      fontFamily: theme.typography.fonts.regular,
+                      color: theme.colors.text.secondary,
+                      lineHeight: theme.typography.sizes.sm * 1.5,
+                      marginBottom: theme.spacing.md,
+                    }}
+                  >
+                    {proposalData.companyInfo.about}
                   </Text>
-                  <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary }}>
-                    {proposalData.companyInfo.industry}
-                  </Text>
+                )}
+                
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.md }}>
+                  {proposalData.companyInfo.industry && (
+                    <View style={{ minWidth: '45%' }}>
+                      <Text style={{ fontSize: theme.typography.sizes.xs, fontFamily: theme.typography.fonts.medium, color: theme.colors.text.tertiary }}>
+                        Industry
+                      </Text>
+                      <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary }}>
+                        {proposalData.companyInfo.industry}
+                      </Text>
+                    </View>
+                  )}
+                  {proposalData.companyInfo.size && (
+                    <View style={{ minWidth: '45%' }}>
+                      <Text style={{ fontSize: theme.typography.sizes.xs, fontFamily: theme.typography.fonts.medium, color: theme.colors.text.tertiary }}>
+                        Company Size
+                      </Text>
+                      <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary }}>
+                        {proposalData.companyInfo.size}
+                      </Text>
+                    </View>
+                  )}
+                  {proposalData.companyInfo.founded && (
+                    <View style={{ minWidth: '45%' }}>
+                      <Text style={{ fontSize: theme.typography.sizes.xs, fontFamily: theme.typography.fonts.medium, color: theme.colors.text.tertiary }}>
+                        Founded
+                      </Text>
+                      <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary }}>
+                        {proposalData.companyInfo.founded}
+                      </Text>
+                    </View>
+                  )}
+                  {proposalData.companyInfo.website && (
+                    <View style={{ minWidth: '45%' }}>
+                      <Text style={{ fontSize: theme.typography.sizes.xs, fontFamily: theme.typography.fonts.medium, color: theme.colors.text.tertiary }}>
+                        Website
+                      </Text>
+                      <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.primary.teal }}>
+                        {proposalData.companyInfo.website}
+                      </Text>
+                    </View>
+                  )}
                 </View>
-                <View style={{ minWidth: '45%' }}>
-                  <Text style={{ fontSize: theme.typography.sizes.xs, fontFamily: theme.typography.fonts.medium, color: theme.colors.text.tertiary }}>
-                    Company Size
-                  </Text>
-                  <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary }}>
-                    {proposalData.companyInfo.size}
-                  </Text>
-                </View>
-                <View style={{ minWidth: '45%' }}>
-                  <Text style={{ fontSize: theme.typography.sizes.xs, fontFamily: theme.typography.fonts.medium, color: theme.colors.text.tertiary }}>
-                    Founded
-                  </Text>
-                  <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.text.secondary }}>
-                    {proposalData.companyInfo.founded}
-                  </Text>
-                </View>
-                <View style={{ minWidth: '45%' }}>
-                  <Text style={{ fontSize: theme.typography.sizes.xs, fontFamily: theme.typography.fonts.medium, color: theme.colors.text.tertiary }}>
-                    Website
-                  </Text>
-                  <Text style={{ fontSize: theme.typography.sizes.sm, fontFamily: theme.typography.fonts.regular, color: theme.colors.primary.teal }}>
-                    {proposalData.companyInfo.website}
-                  </Text>
-                </View>
-              </View>
-            </Section>
+              </Section>
+            )}
           </>
         )}
       </ScrollView>

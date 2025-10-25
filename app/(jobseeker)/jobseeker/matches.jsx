@@ -1,176 +1,86 @@
+import apiService from '@/services/apiService';
 import theme from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-    Dimensions,
-    FlatList,
-    RefreshControl,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
-const { width } = Dimensions.get('window');
-
-export default function Matches() {
+export default function Messages() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'pending', 'accepted', 'rejected'
+  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'unread', 'blocked'
+  const [messages, setMessages] = useState([]);
+  const [filterCounts, setFilterCounts] = useState({
+    all: 0,
+    unread: 0,
+    blocked: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Mock matches data - companies interested in the user
-  const [matches] = useState([
-    {
-      id: '1',
-      companyName: 'TechCorp Solutions',
-      companyInitial: 'TC',
-      position: 'Senior React Developer',
-      location: 'Mumbai, Remote',
-      salary: '₹8,00,000 - ₹15,00,000',
-      matchPercentage: 95,
-      skills: ['React', 'Node.js', 'TypeScript'],
-      proposalTime: '2 hours ago',
-      status: 'accepted', // 'pending', 'accepted', 'rejected'
-      employmentType: 'Full-time',
-      experience: '3-5 years',
-      isUrgent: false,
-      companySize: '500-1000',
-      industry: 'Information Technology',
-      benefits: ['Health Insurance', 'Remote Work', 'Learning Budget'],
-    },
-    {
-      id: '2',
-      companyName: 'Digital Innovations',
-      companyInitial: 'DI',
-      position: 'Full Stack Developer',
-      location: 'Bangalore',
-      salary: '₹7,00,000 - ₹12,00,000',
-      matchPercentage: 88,
-      skills: ['React Native', 'Python', 'AWS'],
-      proposalTime: '5 hours ago',
-      status: 'pending',
-      employmentType: 'Full-time',
-      experience: '2-4 years',
-      isUrgent: true,
-      companySize: '100-500',
-      industry: 'Software Development',
-      benefits: ['Flexible Hours', 'Stock Options', 'Health Coverage'],
-    },
-    {
-      id: '3',
-      companyName: 'StartupHub',
-      companyInitial: 'SH',
-      position: 'Frontend Engineer',
-      location: 'Pune, Hybrid',
-      salary: '₹6,50,000 - ₹10,00,000',
-      matchPercentage: 82,
-      skills: ['React', 'Vue.js', 'JavaScript'],
-      proposalTime: '1 day ago',
-      status: 'pending',
-      employmentType: 'Full-time',
-      experience: '2-3 years',
-      isUrgent: false,
-      companySize: '50-100',
-      industry: 'E-commerce',
-      benefits: ['Startup Equity', 'Flexible Work', 'Team Events'],
-    },
-    {
-      id: '4',
-      companyName: 'InnovateCorp',
-      companyInitial: 'IC',
-      position: 'React Native Developer',
-      location: 'Delhi, On-site',
-      salary: '₹9,00,000 - ₹16,00,000',
-      matchPercentage: 91,
-      skills: ['React Native', 'Mobile Dev', 'Firebase'],
-      proposalTime: '2 days ago',
-      status: 'pending',
-      employmentType: 'Full-time',
-      experience: '3-6 years',
-      isUrgent: true,
-      companySize: '1000+',
-      industry: 'Fintech',
-      benefits: ['Premium Healthcare', 'Performance Bonus', 'Training'],
-    },
-    {
-      id: '5',
-      companyName: 'DevSolutions Ltd',
-      companyInitial: 'DS',
-      position: 'Senior Frontend Developer',
-      location: 'Chennai, Remote',
-      salary: '₹7,50,000 - ₹13,00,000',
-      matchPercentage: 78,
-      skills: ['React', 'Angular', 'TypeScript'],
-      proposalTime: '3 days ago',
-      status: 'rejected',
-      employmentType: 'Full-time',
-      experience: '4-7 years',
-      isUrgent: false,
-      companySize: '200-500',
-      industry: 'Consulting',
-      benefits: ['Work from Home', 'Health Insurance', 'Annual Bonus'],
-    },
-    {
-      id: '6',
-      companyName: 'FutureTech',
-      companyInitial: 'FT',
-      position: 'Lead Developer',
-      location: 'Hyderabad, Hybrid',
-      salary: '₹12,00,000 - ₹20,00,000',
-      matchPercentage: 89,
-      skills: ['React', 'Leadership', 'Architecture'],
-      proposalTime: '4 days ago',
-      status: 'pending',
-      employmentType: 'Full-time',
-      experience: '5-8 years',
-      isUrgent: false,
-      companySize: '500-1000',
-      industry: 'AI/ML',
-      benefits: ['Stock Options', 'Premium Benefits', 'Innovation Time'],
-    },
-  ]);
+  // Fetch conversations on mount and filter change
+  useEffect(() => {
+    fetchConversations();
+  }, [activeFilter]);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 2000);
-  };
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery !== undefined) {
+        fetchConversations();
+      }
+    }, 500);
 
-  // Filter matches based on active filter and search query
-  const getFilteredMatches = () => {
-    let filtered = matches;
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-    // Apply status filter
-    if (activeFilter !== 'all') {
-      filtered = filtered.filter(match => match.status === activeFilter);
-    }
+  const fetchConversations = async (showLoader = true) => {
+    try {
+      if (showLoader) setIsLoading(true);
 
-    // Apply search filter
-    if (searchQuery.trim()) {
-      filtered = filtered.filter(match =>
-        match.companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        match.position.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        match.location.toLowerCase().includes(searchQuery.toLowerCase())
+      const result = await apiService.getJobseekerChatList(
+        searchQuery,
+        activeFilter,
+        50,
+        0
       );
+
+      if (result.success) {
+        setMessages(result.data.conversations || []);
+        setFilterCounts(result.data.filter_counts || {
+          all: 0,
+          unread: 0,
+          blocked: 0,
+        });
+      } else {
+        console.error('Error fetching conversations:', result.message);
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      setMessages([]);
+    } finally {
+      if (showLoader) setIsLoading(false);
     }
-
-    return filtered;
   };
 
-  // Get stats for filters
-  const getFilterStats = () => {
-    return {
-      all: matches.length,
-      pending: matches.filter(m => m.status === 'pending').length,
-      accepted: matches.filter(m => m.status === 'accepted').length,
-      rejected: matches.filter(m => m.status === 'rejected').length,
-    };
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchConversations(false);
+    setRefreshing(false);
   };
 
-  const stats = getFilterStats();
+  // Navigate to chat details
+  const handleChatPress = (item) => {
+    router.push(`/message-details/${item.conversation_id}`);
+  };
 
   // Header Component
   const Header = () => (
@@ -184,105 +94,6 @@ export default function Matches() {
         borderBottomColor: theme.colors.border.light,
       }}
     >
-      {/* Stats Cards */}
-      <View
-        style={{
-          flexDirection: 'row',
-          gap: theme.spacing.sm,
-          marginBottom: theme.spacing.md,
-        }}
-      >
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: theme.colors.background.accent,
-            borderRadius: theme.borderRadius.lg,
-            padding: theme.spacing.md,
-            alignItems: 'center',
-          }}
-        >
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.xxl,
-              fontFamily: theme.typography.fonts.bold,
-              color: theme.colors.primary.teal,
-            }}
-          >
-            {matches.length}
-          </Text>
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.xs,
-              fontFamily: theme.typography.fonts.medium,
-              color: theme.colors.text.secondary,
-              textAlign: 'center',
-            }}
-          >
-            Total Matches
-          </Text>
-        </View>
-
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: theme.colors.background.accent,
-            borderRadius: theme.borderRadius.lg,
-            padding: theme.spacing.md,
-            alignItems: 'center',
-          }}
-        >
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.xxl,
-              fontFamily: theme.typography.fonts.bold,
-              color: theme.colors.primary.orange,
-            }}
-          >
-            {stats.pending}
-          </Text>
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.xs,
-              fontFamily: theme.typography.fonts.medium,
-              color: theme.colors.text.secondary,
-              textAlign: 'center',
-            }}
-          >
-            Pending
-          </Text>
-        </View>
-
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: theme.colors.background.accent,
-            borderRadius: theme.borderRadius.lg,
-            padding: theme.spacing.md,
-            alignItems: 'center',
-          }}
-        >
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.xxl,
-              fontFamily: theme.typography.fonts.bold,
-              color: theme.colors.status.success,
-            }}
-          >
-            {stats.accepted}
-          </Text>
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.xs,
-              fontFamily: theme.typography.fonts.medium,
-              color: theme.colors.text.secondary,
-              textAlign: 'center',
-            }}
-          >
-            Accepted
-          </Text>
-        </View>
-      </View>
-
       {/* Search Bar */}
       <View
         style={{
@@ -304,7 +115,7 @@ export default function Matches() {
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Search companies or positions..."
+          placeholder="Search conversations..."
           placeholderTextColor={theme.colors.text.placeholder}
           style={{
             flex: 1,
@@ -330,10 +141,9 @@ export default function Matches() {
       {/* Filter Tabs */}
       <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
         {[
-          { id: 'all', label: 'All', count: stats.all },
-          { id: 'pending', label: 'Pending', count: stats.pending },
-          { id: 'accepted', label: 'Accepted', count: stats.accepted },
-          { id: 'rejected', label: 'Rejected', count: stats.rejected },
+          { id: 'all', label: 'All', count: filterCounts.all },
+          { id: 'unread', label: 'Unread', count: filterCounts.unread },
+          { id: 'blocked', label: 'Blocked', count: filterCounts.blocked },
         ].map((filter) => (
           <TouchableOpacity
             key={filter.id}
@@ -394,152 +204,172 @@ export default function Matches() {
     </View>
   );
 
-  // Match Item Component
-  const MatchItem = ({ item }) => {
-    const getStatusColor = () => {
-      switch (item.status) {
-        case 'accepted': return theme.colors.status.success;
-        case 'rejected': return theme.colors.status.error;
-        default: return theme.colors.primary.orange;
-      }
-    };
-
-    const getStatusIcon = () => {
-      switch (item.status) {
-        case 'accepted': return 'checkmark-circle';
-        case 'rejected': return 'close-circle';
-        default: return 'time';
-      }
-    };
-
-    return (
-      <TouchableOpacity
-        onPress={() => router.push(`/job-details/${item.id}`)}
-        style={{
-          backgroundColor: theme.colors.background.card,
-          borderRadius: theme.borderRadius.lg,
-          padding: theme.spacing.lg,
-          marginHorizontal: theme.spacing.lg,
-          marginBottom: theme.spacing.md,
-          borderWidth: 1,
-          borderColor: theme.colors.border.light,
-          opacity: item.status === 'rejected' ? 0.7 : 1,
-        }}
-        activeOpacity={0.9}
-      >
-        {/* Header Row */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: theme.spacing.sm }}>
-          {/* Company Avatar */}
-          <View
+  // Message Item Component
+  const MessageItem = ({ item }) => (
+    <TouchableOpacity
+      onPress={() => handleChatPress(item)}
+      style={{
+        flexDirection: 'row',
+        padding: theme.spacing.lg,
+        backgroundColor: theme.colors.background.card,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border.light,
+      }}
+      activeOpacity={0.7}
+    >
+      {/* Company Avatar */}
+      <View style={{ marginRight: theme.spacing.md, position: 'relative' }}>
+        <View
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: theme.borderRadius.full,
+            backgroundColor: item.unreadCount > 0 
+              ? theme.colors.primary.teal 
+              : theme.colors.background.accent,
+            justifyContent: 'center',
+            alignItems: 'center',
+            borderWidth: item.unreadCount > 0 ? 2 : 1,
+            borderColor: item.unreadCount > 0 
+              ? theme.colors.primary.teal 
+              : theme.colors.border.light,
+          }}
+        >
+          <Text
             style={{
-              width: 50,
-              height: 50,
-              borderRadius: 25,
-              backgroundColor: theme.colors.background.accent,
-              justifyContent: 'center',
-              alignItems: 'center',
-              marginRight: theme.spacing.md,
-              borderWidth: 2,
-              borderColor: getStatusColor(),
+              fontSize: theme.typography.sizes.base,
+              fontFamily: theme.typography.fonts.bold,
+              color: item.unreadCount > 0 
+                ? theme.colors.neutral.white 
+                : theme.colors.primary.teal,
             }}
           >
+            {item.companyInitial}
+          </Text>
+        </View>
+
+        {/* Online status */}
+        {item.isOnline && !item.isBlocked && (
+          <View
+            style={{
+              position: 'absolute',
+              bottom: 2,
+              right: 2,
+              width: 12,
+              height: 12,
+              borderRadius: 6,
+              backgroundColor: theme.colors.status.success,
+              borderWidth: 2,
+              borderColor: theme.colors.background.card,
+            }}
+          />
+        )}
+
+        {/* Blocked indicator */}
+        {item.isBlocked && (
+          <View
+            style={{
+              position: 'absolute',
+              bottom: 2,
+              right: 2,
+              width: 12,
+              height: 12,
+              borderRadius: 6,
+              backgroundColor: theme.colors.status.error,
+              borderWidth: 2,
+              borderColor: theme.colors.background.card,
+            }}
+          />
+        )}
+      </View>
+
+      {/* Message Content */}
+      <View style={{ flex: 1 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: theme.spacing.xs,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.base,
+              fontFamily: item.unreadCount > 0 
+                ? theme.typography.fonts.semiBold 
+                : theme.typography.fonts.medium,
+              color: theme.colors.text.primary,
+              flex: 1,
+            }}
+            numberOfLines={1}
+          >
+            {item.companyName}
+          </Text>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
+            {/* Message type indicator */}
+            {item.messageType === 'file' && (
+              <Ionicons
+                name="document-attach-outline"
+                size={14}
+                color={theme.colors.text.tertiary}
+              />
+            )}
+
+            {/* Blocked indicator */}
+            {item.isBlocked && (
+              <Ionicons
+                name="ban-outline"
+                size={14}
+                color={theme.colors.status.error}
+              />
+            )}
+
             <Text
               style={{
-                fontSize: theme.typography.sizes.base,
-                fontFamily: theme.typography.fonts.bold,
-                color: theme.colors.primary.teal,
-              }}
-            >
-              {item.companyInitial}
-            </Text>
-          </View>
-
-          {/* Company Info */}
-          <View style={{ flex: 1, marginRight: theme.spacing.sm }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: theme.spacing.xs }}>
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.base,
-                  fontFamily: theme.typography.fonts.semiBold,
-                  color: theme.colors.text.primary,
-                  flex: 1,
-                }}
-                numberOfLines={1}
-              >
-                {item.companyName}
-              </Text>
-              {item.isUrgent && (
-                <View
-                  style={{
-                    backgroundColor: theme.colors.status.error,
-                    borderRadius: theme.borderRadius.sm,
-                    paddingHorizontal: theme.spacing.xs,
-                    paddingVertical: 2,
-                    marginLeft: theme.spacing.xs,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: theme.typography.sizes.xs,
-                      fontFamily: theme.typography.fonts.bold,
-                      color: theme.colors.neutral.white,
-                    }}
-                  >
-                    URGENT
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
+                fontSize: theme.typography.sizes.xs,
                 fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
-                marginBottom: theme.spacing.xs,
+                color: theme.colors.text.tertiary,
               }}
             >
-              {item.industry} • {item.companySize} employees
+              {item.timestamp}
             </Text>
           </View>
+        </View>
 
-          {/* Status and Match */}
-          <View style={{ alignItems: 'flex-end' }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.sm,
+              fontFamily: theme.typography.fonts.regular,
+              color: item.unreadCount > 0 
+                ? theme.colors.text.primary 
+                : theme.colors.text.secondary,
+              flex: 1,
+              marginRight: theme.spacing.sm,
+            }}
+            numberOfLines={1}
+          >
+            {item.lastMessage}
+          </Text>
+
+          {/* Unread count badge */}
+          {item.unreadCount > 0 && (
             <View
               style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                backgroundColor: `${getStatusColor()}15`,
-                borderRadius: theme.borderRadius.sm,
+                backgroundColor: theme.colors.primary.teal,
+                borderRadius: theme.borderRadius.full,
                 paddingHorizontal: theme.spacing.xs,
                 paddingVertical: 2,
-                marginBottom: theme.spacing.xs,
-              }}
-            >
-              <Ionicons
-                name={getStatusIcon()}
-                size={12}
-                color={getStatusColor()}
-                style={{ marginRight: theme.spacing.xs }}
-              />
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.xs,
-                  fontFamily: theme.typography.fonts.medium,
-                  color: getStatusColor(),
-                  textTransform: 'capitalize',
-                }}
-              >
-                {item.status}
-              </Text>
-            </View>
-
-            <View
-              style={{
-                backgroundColor: theme.colors.status.success,
-                borderRadius: theme.borderRadius.full,
-                paddingHorizontal: theme.spacing.sm,
-                paddingVertical: theme.spacing.xs,
+                minWidth: 20,
+                alignItems: 'center',
               }}
             >
               <Text
@@ -549,209 +379,14 @@ export default function Matches() {
                   color: theme.colors.neutral.white,
                 }}
               >
-                {item.matchPercentage}% Match
+                {item.unreadCount > 99 ? '99+' : item.unreadCount}
               </Text>
             </View>
-          </View>
+          )}
         </View>
-
-        {/* Position Details */}
-        <Text
-          style={{
-            fontSize: theme.typography.sizes.md,
-            fontFamily: theme.typography.fonts.bold,
-            color: theme.colors.text.primary,
-            marginBottom: theme.spacing.xs,
-          }}
-        >
-          {item.position}
-        </Text>
-
-        {/* Job Info */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: theme.spacing.md, gap: theme.spacing.md }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-            <Ionicons
-              name="location-outline"
-              size={14}
-              color={theme.colors.text.tertiary}
-              style={{ marginRight: theme.spacing.xs }}
-            />
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
-              }}
-            >
-              {item.location}
-            </Text>
-          </View>
-
-          <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-            <Ionicons
-              name="cash-outline"
-              size={14}
-              color={theme.colors.text.tertiary}
-              style={{ marginRight: theme.spacing.xs }}
-            />
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
-              }}
-            >
-              {item.salary}
-            </Text>
-          </View>
-
-          <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-            <Ionicons
-              name="briefcase-outline"
-              size={14}
-              color={theme.colors.text.tertiary}
-              style={{ marginRight: theme.spacing.xs }}
-            />
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
-              }}
-            >
-              {item.employmentType}
-            </Text>
-          </View>
-
-          <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
-            <Ionicons
-              name="time-outline"
-              size={14}
-              color={theme.colors.text.tertiary}
-              style={{ marginRight: theme.spacing.xs }}
-            />
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
-              }}
-            >
-              {item.experience}
-            </Text>
-          </View>
-        </View>
-
-        {/* Skills */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: theme.spacing.md }}>
-          {item.skills.map((skill, index) => (
-            <View
-              key={index}
-              style={{
-                backgroundColor: theme.colors.background.accent,
-                borderRadius: theme.borderRadius.sm,
-                paddingHorizontal: theme.spacing.sm,
-                paddingVertical: theme.spacing.xs,
-                marginRight: theme.spacing.xs,
-                marginBottom: theme.spacing.xs,
-                borderWidth: 1,
-                borderColor: theme.colors.primary.teal,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.xs,
-                  fontFamily: theme.typography.fonts.medium,
-                  color: theme.colors.primary.teal,
-                }}
-              >
-                {skill}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Benefits */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: theme.spacing.md }}>
-          {item.benefits.slice(0, 3).map((benefit, index) => (
-            <View
-              key={index}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                marginRight: theme.spacing.md,
-                marginBottom: theme.spacing.xs,
-              }}
-            >
-              <Ionicons
-                name="checkmark-outline"
-                size={12}
-                color={theme.colors.status.success}
-                style={{ marginRight: theme.spacing.xs }}
-              />
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.xs,
-                  fontFamily: theme.typography.fonts.regular,
-                  color: theme.colors.text.secondary,
-                }}
-              >
-                {benefit}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Footer */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.xs,
-              fontFamily: theme.typography.fonts.regular,
-              color: theme.colors.text.tertiary,
-            }}
-          >
-            Received {item.proposalTime}
-          </Text>
-
-          <TouchableOpacity
-            onPress={() => router.push(`/job-details/${item.id}`)}
-            style={{
-              borderRadius: theme.borderRadius.md,
-              overflow: 'hidden',
-            }}
-            activeOpacity={0.9}
-          >
-            <LinearGradient
-              colors={[theme.colors.primary.teal, theme.colors.secondary.darkTeal]}
-              style={{
-                paddingHorizontal: theme.spacing.md,
-                paddingVertical: theme.spacing.sm,
-                flexDirection: 'row',
-                alignItems: 'center',
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.sm,
-                  fontFamily: theme.typography.fonts.semiBold,
-                  color: theme.colors.neutral.white,
-                  marginRight: theme.spacing.xs,
-                }}
-              >
-                View Details
-              </Text>
-              <Ionicons
-                name="arrow-forward"
-                size={14}
-                color={theme.colors.neutral.white}
-              />
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-    );
-  };
+      </View>
+    </TouchableOpacity>
+  );
 
   // Empty State Component
   const EmptyState = () => (
@@ -777,11 +412,9 @@ export default function Matches() {
       >
         <Ionicons
           name={
-            searchQuery ? 'search-outline' :
-            activeFilter === 'pending' ? 'time-outline' :
-            activeFilter === 'accepted' ? 'checkmark-circle-outline' :
-            activeFilter === 'rejected' ? 'close-circle-outline' :
-            'heart-outline'
+            activeFilter === 'blocked' ? 'ban-outline' :
+            activeFilter === 'unread' ? 'mail-unread-outline' :
+            searchQuery ? 'search-outline' : 'chatbubbles-outline'
           }
           size={32}
           color={theme.colors.primary.teal}
@@ -797,11 +430,10 @@ export default function Matches() {
           textAlign: 'center',
         }}
       >
-        {searchQuery ? 'No matches found' :
-         activeFilter === 'pending' ? 'No pending proposals' :
-         activeFilter === 'accepted' ? 'No accepted proposals' :
-         activeFilter === 'rejected' ? 'No rejected proposals' :
-         'No matches yet'}
+        {searchQuery ? 'No results found' :
+         activeFilter === 'blocked' ? 'No blocked conversations' :
+         activeFilter === 'unread' ? 'No unread messages' :
+         'No conversations yet'}
       </Text>
 
       <Text
@@ -813,47 +445,48 @@ export default function Matches() {
           lineHeight: theme.typography.sizes.base * 1.4,
         }}
       >
-        {searchQuery ? 'Try adjusting your search terms or filters' :
-         activeFilter === 'pending' ? 'All proposals have been reviewed' :
-         activeFilter === 'accepted' ? 'No accepted proposals to show' :
-         activeFilter === 'rejected' ? 'No rejected proposals to show' :
-         'Companies will appear here when they show interest in your profile'}
+        {searchQuery ? 'Try adjusting your search terms' :
+         activeFilter === 'blocked' ? 'You haven\'t blocked any companies yet' :
+         activeFilter === 'unread' ? 'All messages have been read' :
+         'When companies send you proposals, your conversations will appear here'}
       </Text>
     </View>
   );
 
-  const filteredMatches = getFilteredMatches();
+  // Loading State
+  if (isLoading) {
+    return (
+      <View style={{ 
+        flex: 1, 
+        backgroundColor: theme.colors.background.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}>
+        <ActivityIndicator size="large" color={theme.colors.primary.teal} />
+        <Text style={{
+          marginTop: theme.spacing.md,
+          fontSize: theme.typography.sizes.base,
+          fontFamily: theme.typography.fonts.medium,
+          color: theme.colors.text.secondary,
+        }}>
+          Loading conversations...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background.primary }}>
-      {/* Background Gradient */}
-      <LinearGradient
-        colors={[
-          theme.colors.background.accent,
-          'rgba(27, 163, 163, 0.02)',
-          theme.colors.background.primary,
-        ]}
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          top: 0,
-          bottom: 0,
-        }}
-        locations={[0, 0.3, 1]}
-      />
-
       <Header />
       
-      {filteredMatches.length === 0 ? (
+      {messages.length === 0 ? (
         <EmptyState />
       ) : (
         <FlatList
-          data={filteredMatches}
-          renderItem={({ item }) => <MatchItem item={item} />}
+          data={messages}
+          renderItem={({ item }) => <MessageItem item={item} />}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingVertical: theme.spacing.md }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
