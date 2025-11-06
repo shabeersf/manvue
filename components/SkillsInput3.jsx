@@ -2,21 +2,21 @@ import theme from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  FlatList,
-  Keyboard,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Animated,
+    FlatList,
+    Keyboard,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
-const SkillsInput = ({
+const SkillsInput3 = ({
   skills = [],
   onSkillsChange,
   availableSkills = [], // Array of {skill_name: 'React', skill_category: 'Frontend'}
   label = 'Skills (Add up to 10 skills)',
-  placeholder = 'Type a skill and press Enter',
+  placeholder = 'Search and select skills from the list',
   maxSkills = 10,
   maxSkillLength = 30,
   required = false,
@@ -36,15 +36,17 @@ const SkillsInput = ({
         .filter(skill => {
           const skillName = (skill.skill_name || skill.label || '').toLowerCase();
           // Check if skill is not already added
-          const alreadyAdded = skills.some(s => 
+          const alreadyAdded = skills.some(s =>
             getSkillName(s).toLowerCase() === (skill.skill_name || skill.label || '').toLowerCase()
           );
           return skillName.includes(searchTerm) && !alreadyAdded;
         })
         .slice(0, 5); // Limit to 5 suggestions
 
+      console.log('🔍 Filtering skills:', { searchTerm, availableSkillsCount: availableSkills.length, filteredCount: filtered.length });
+
       setFilteredSuggestions(filtered);
-      
+
       if (filtered.length > 0) {
         setShowSuggestions(true);
         Animated.timing(fadeAnim, {
@@ -105,9 +107,10 @@ const SkillsInput = ({
       skill_category: category,
       proficiency_level: 'intermediate',
       years_of_experience: 0,
-      ...(skillId && { skill_id: skillId }) // Include skill_id if available
+      ...(skillId && { skill_id: skillId }) // Include skill_id only if available
     };
 
+    console.log('➕ Adding skill:', newSkill);
     onSkillsChange([...skills, newSkill]);
     setInputValue('');
     hideSuggestions();
@@ -277,43 +280,60 @@ const SkillsInput = ({
           marginTop: theme.spacing.sm,
         }}
       >
-        {skills.map((skill, index) => (
-          <View
-            key={`skill-${index}-${getSkillName(skill)}`}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: theme.colors.secondary.lightTeal,
-              borderRadius: theme.borderRadius.full,
-              paddingVertical: theme.spacing.xs,
-              paddingHorizontal: theme.spacing.md,
-              marginRight: theme.spacing.sm,
-              marginBottom: theme.spacing.sm,
-            }}
-          >
-            <Text
+        {skills.map((skill, index) => {
+          const isCustomSkill = !skill.skill_id && !skill.value;
+          return (
+            <View
+              key={`skill-${index}-${getSkillName(skill)}`}
               style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.medium,
-                color: theme.colors.background.primary,
-                marginRight: theme.spacing.xs,
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: isCustomSkill
+                  ? 'rgba(245, 158, 11, 0.2)' // Orange/warning color for custom skills
+                  : theme.colors.secondary.lightTeal,
+                borderRadius: theme.borderRadius.full,
+                paddingVertical: theme.spacing.xs,
+                paddingHorizontal: theme.spacing.md,
+                marginRight: theme.spacing.sm,
+                marginBottom: theme.spacing.sm,
+                borderWidth: isCustomSkill ? 1 : 0,
+                borderColor: isCustomSkill ? theme.colors.status.warning : 'transparent',
               }}
             >
-              {getSkillName(skill)}
-            </Text>
-            <TouchableOpacity
-              onPress={() => removeSkill(index)}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name="close-circle"
-                size={18}
-                color={theme.colors.primary.teal}
-              />
-            </TouchableOpacity>
-          </View>
-        ))}
+              {isCustomSkill && (
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={14}
+                  color={theme.colors.status.warning}
+                  style={{ marginRight: theme.spacing.xs }}
+                />
+              )}
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: isCustomSkill ? theme.colors.status.warning : theme.colors.background.primary,
+                  marginRight: theme.spacing.xs,
+                }}
+              >
+                {getSkillName(skill)}
+              </Text>
+              <TouchableOpacity
+                onPress={() => removeSkill(index)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={18}
+                  color={isCustomSkill ? theme.colors.status.warning : theme.colors.primary.teal}
+                />
+              </TouchableOpacity>
+            </View>
+          );
+        })}
       </View>
+
+     
 
       {/* Skills Counter */}
       <Text
@@ -341,8 +361,23 @@ const SkillsInput = ({
           Type at least 2 characters to see suggestions
         </Text>
       )}
+
+      {/* Helper text when no suggestions */}
+      {inputValue.trim().length >= 2 && !showSuggestions && availableSkills.length > 0 && (
+        <Text
+          style={{
+            fontSize: theme.typography.sizes.xs,
+            fontFamily: theme.typography.fonts.regular,
+            color: theme.colors.status.info,
+            marginTop: theme.spacing.xs,
+            fontStyle: 'italic',
+          }}
+        >
+          No matching skills found. Press Enter or + to add as custom skill.
+        </Text>
+      )}
     </View>
   );
 };
 
-export default SkillsInput;
+export default SkillsInput3;

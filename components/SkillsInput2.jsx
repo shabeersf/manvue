@@ -111,7 +111,7 @@ const SkillsInput2 = ({
           marginBottom: theme.spacing.sm,
         }}
       >
-        Type any skill (e.g., React, Python, Marketing) and click Add
+        Type any skill (eg: React, Python, Marketing) and click Add
       </Text>
 
       {/* Add Skill Input */}

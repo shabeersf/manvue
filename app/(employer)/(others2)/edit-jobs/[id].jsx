@@ -1,3 +1,4 @@
+import CustomDatePicker from "@/components/CustomDatePicker";
 import CustomDropdown from "@/components/CustomDropdown";
 import CustomInput from "@/components/CustomInput";
 import SafeAreaWrapper from "@/components/SafeAreaWrapper";
@@ -250,6 +251,8 @@ export default function EditJobPost() {
     if (!formData.jobTitle.trim()) newErrors.jobTitle = "Job title is required";
     if (!formData.locationCity.trim())
       newErrors.locationCity = "City is required";
+     if (!formData.locationState.trim())
+      newErrors.locationState = "State is required";
     if (!formData.employmentType)
       newErrors.employmentType = "Employment type is required";
     if (!formData.workMode) newErrors.workMode = "Work mode is required";
@@ -259,9 +262,21 @@ export default function EditJobPost() {
       newErrors.jobResponsibilities = "Responsibilities are required";
     if (!formData.jobRequirements.trim())
       newErrors.jobRequirements = "Requirements are required";
+    if (!formData.department.trim())
+      newErrors.department = "Department is required"; // ✅ Added
+    if (!formData.jobCategory)
+      newErrors.jobCategory = "Job category is required"; // ✅ Added
 
     if (skills.length === 0) {
       newErrors.skills = "At least one skill is required";
+    }
+    if (!formData.applicationDeadline) {
+      newErrors.applicationDeadline = "Application deadline is required";
+    } else {
+      const today = new Date().toISOString().split("T")[0];
+      if (formData.applicationDeadline < today) {
+        newErrors.applicationDeadline = "Deadline cannot be in the past";
+      }
     }
 
     if (formData.salaryMin && formData.salaryMax) {
@@ -870,7 +885,7 @@ export default function EditJobPost() {
               label="Job Title"
               value={formData.jobTitle}
               onChangeText={(value) => updateFormData("jobTitle", value)}
-              placeholder="e.g., Senior React Developer"
+              placeholder="eg: Senior React Developer"
               icon="briefcase-outline"
               error={errors.jobTitle}
               required
@@ -880,8 +895,9 @@ export default function EditJobPost() {
               label="Department"
               value={formData.department}
               onChangeText={(value) => updateFormData("department", value)}
-              placeholder="e.g., Engineering, Marketing, Sales"
+              placeholder="eg: Engineering, Marketing, Sales"
               icon="business-outline"
+              required
               error={errors.department}
             />
 
@@ -892,35 +908,31 @@ export default function EditJobPost() {
               options={jobCategoryOptions}
               placeholder="Select job category"
               icon="grid-outline"
+              required
               error={errors.jobCategory}
             />
 
-            <View style={{ flexDirection: "row", gap: theme.spacing.md }}>
-              <View style={{ flex: 1 }}>
-                <CustomInput
-                  label="City"
-                  value={formData.locationCity}
-                  onChangeText={(value) =>
-                    updateFormData("locationCity", value)
-                  }
-                  placeholder="e.g., Mumbai"
-                  icon="location-outline"
-                  error={errors.locationCity}
-                  required
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <CustomInput
-                  label="State"
-                  value={formData.locationState}
-                  onChangeText={(value) =>
-                    updateFormData("locationState", value)
-                  }
-                  placeholder="e.g., Maharashtra"
-                  icon="location-outline"
-                  error={errors.locationState}
-                />
-              </View>
+            <View style={{ flex: 1 }}>
+              <CustomInput
+                label="City"
+                value={formData.locationCity}
+                onChangeText={(value) => updateFormData("locationCity", value)}
+                placeholder="eg: Mumbai"
+                icon="location-outline"
+                error={errors.locationCity}
+                required
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <CustomInput
+              required
+                label="State"
+                value={formData.locationState}
+                onChangeText={(value) => updateFormData("locationState", value)}
+                placeholder="eg: Maharashtra"
+                icon="location-outline"
+                error={errors.locationState}
+              />
             </View>
 
             <CustomDropdown
@@ -966,7 +978,7 @@ export default function EditJobPost() {
                   onChangeText={(value) =>
                     updateFormData("experienceMax", value)
                   }
-                  placeholder="e.g., 5"
+                  placeholder="eg: 5"
                   icon="school-outline"
                   keyboardType="number-pad"
                   error={errors.experienceMax}
@@ -1019,29 +1031,27 @@ export default function EditJobPost() {
               error={errors.salaryType}
             />
 
-            <View style={{ flexDirection: "row", gap: theme.spacing.md }}>
-              <View style={{ flex: 1 }}>
-                <CustomInput
-                  label="Minimum Salary (₹)"
-                  value={formData.salaryMin}
-                  onChangeText={(value) => updateFormData("salaryMin", value)}
-                  placeholder="e.g., 800000"
-                  icon="cash-outline"
-                  keyboardType="numeric"
-                  error={errors.salaryMin}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <CustomInput
-                  label="Maximum Salary (₹)"
-                  value={formData.salaryMax}
-                  onChangeText={(value) => updateFormData("salaryMax", value)}
-                  placeholder="e.g., 1500000"
-                  icon="cash-outline"
-                  keyboardType="numeric"
-                  error={errors.salaryMax}
-                />
-              </View>
+            <View style={{ flex: 1 }}>
+              <CustomInput
+                label="Minimum Salary (₹)"
+                value={formData.salaryMin}
+                onChangeText={(value) => updateFormData("salaryMin", value)}
+                placeholder="eg: 800000"
+                icon="cash-outline"
+                keyboardType="numeric"
+                error={errors.salaryMin}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <CustomInput
+                label="Maximum Salary (₹)"
+                value={formData.salaryMax}
+                onChangeText={(value) => updateFormData("salaryMax", value)}
+                placeholder="eg: 1500000"
+                icon="cash-outline"
+                keyboardType="numeric"
+                error={errors.salaryMax}
+              />
             </View>
           </View>
 
@@ -1111,7 +1121,7 @@ export default function EditJobPost() {
               onChangeText={(value) =>
                 updateFormData("educationRequirement", value)
               }
-              placeholder="e.g., Bachelor's in Computer Science or equivalent"
+              placeholder="eg: Bachelor's in Computer Science or equivalent"
               icon="school-outline"
               error={errors.educationRequirement}
             />
@@ -1153,7 +1163,7 @@ export default function EditJobPost() {
             <SkillsInput2
               skills={skills}
               onSkillsChange={handleSkillsChange}
-              label="Required Skills *"
+              label="Required Skills"
               required={true}
               error={errors.skills}
             />
@@ -1168,14 +1178,13 @@ export default function EditJobPost() {
               error={errors.priorityLevel}
             />
 
-            <CustomInput
+            <CustomDatePicker
               label="Application Deadline"
               value={formData.applicationDeadline}
-              onChangeText={(value) =>
-                updateFormData("applicationDeadline", value)
-              }
-              placeholder="YYYY-MM-DD (e.g., 2025-12-31)"
+              onChange={(date) => updateFormData("applicationDeadline", date)}
+              placeholder="YYYY-MM-DD (eg: 2025-12-31)"
               icon="calendar-outline"
+              required
               error={errors.applicationDeadline}
             />
           </View>

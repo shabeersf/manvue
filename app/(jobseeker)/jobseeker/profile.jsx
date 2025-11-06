@@ -414,19 +414,19 @@ export default function Profile() {
 
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Ionicons
-            name={userProfile?.is_verified ? "checkmark-circle" : "alert-circle"}
+            name={userProfile?.is_verified =="active" ? "checkmark-circle" : "alert-circle"}
             size={16}
-            color={userProfile?.is_verified ? theme.colors.status.success : theme.colors.status.warning}
+            color={userProfile?.is_verified =="active" ? theme.colors.status.success : theme.colors.status.warning}
             style={{ marginRight: theme.spacing.xs }}
           />
           <Text
             style={{
               fontSize: theme.typography.sizes.sm,
               fontFamily: theme.typography.fonts.regular,
-              color: userProfile?.is_verified ? theme.colors.status.success : theme.colors.status.warning,
+              color: userProfile?.is_verified =="active" ? theme.colors.status.success : theme.colors.status.warning,
             }}
           >
-            {userProfile?.is_verified ? 'Verified Profile' : 'Verification Pending'}
+            {userProfile?.is_verified =="active" ? 'Verified Profile' : 'Verification Pending'}
           </Text>
         </View>
       </View>
@@ -951,6 +951,7 @@ export default function Profile() {
         contentContainerStyle={{ paddingBottom: theme.spacing.xl }}
       >
         <Header />
+        <View style={{ marginTop: 14 }} />
 
         <PendingChangesSection />
 

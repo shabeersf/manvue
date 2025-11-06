@@ -4,17 +4,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Dimensions,
   FlatList,
   Image,
   RefreshControl,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
 const { width } = Dimensions.get('window');
@@ -23,121 +22,111 @@ export default function JobSeekerHome() {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState(null);
+  const [jobseekerId, setJobseekerId] = useState(null);
   const [error, setError] = useState(null);
-  const [jobRecommendations, setJobRecommendations] = useState([]);
-  const [recentActivity, setRecentActivity] = useState([]);
+  
+  // Matches/Proposals data
+  const [matches, setMatches] = useState([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    accepted: 0,
+    rejected: 0,
+  });
 
-  // Load user data from API
-  const loadUserData = async () => {
+  // Load user data on mount
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  // Load proposals when jobseeker ID is available
+  useEffect(() => {
+    if (jobseekerId) {
+      loadProposals();
+    }
+  }, [jobseekerId]);
+
+  const loadInitialData = async () => {
     try {
       setError(null);
       const userId = await SecureStore.getItemAsync('user_id');
 
       if (!userId) {
         setError('User not found. Please log in again.');
+        router.replace('/(auth)/login');
         return;
       }
 
+      setJobseekerId(userId);
+
+      // Load user dashboard data
       const response = await apiService.getHomeDashboard(userId, 'jobseeker');
 
       if (response.success) {
         setUserData(response.data);
-        setJobRecommendations(response.data.job_recommendations || []);
-        setRecentActivity(response.data.recent_activity || []);
-        console.log('✅ User data loaded:', response.data);
+        if (__DEV__) {
+          console.log('✅ User data loaded:', response.data);
+        }
       } else {
-        setError(response.message || 'Failed to load user data');
-        console.log('❌ Failed to load user data:', response.errors);
+        console.error('❌ Failed to load user data:', response.message);
       }
     } catch (error) {
+      console.error('❌ Network error:', error);
       setError('Network error. Please try again.');
-      console.log('❌ Network error:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Load data on component mount
-  useEffect(() => {
-    loadUserData();
-  }, []);
+  const loadProposals = async (showLoader = true) => {
+    if (!jobseekerId) return;
 
-  // Use dynamic job recommendations from API
-  const getJobRecommendations = () => {
-    return jobRecommendations.length > 0 ? jobRecommendations : [];
-  };
-
-  // Recent activity will come from API data
-  const getRecentActivity = () => {
-    if (!recentActivity || recentActivity.length === 0) return [];
-
-    return recentActivity.map((activity, index) => ({
-      id: index.toString(),
-      type: activity.type,
-      message: activity.message,
-      time: formatDate(activity.date),
-      icon: getActivityIcon(activity.type),
-      color: getActivityColor(activity.type),
-      status: activity.status
-    }));
-  };
-
-  const getActivityIcon = (type) => {
-    switch (type) {
-      case 'application':
-        return 'document-text-outline';
-      case 'interview':
-        return 'videocam-outline';
-      case 'message':
-        return 'chatbubble-outline';
-      case 'profile_view':
-        return 'eye-outline';
-      default:
-        return 'information-circle-outline';
-    }
-  };
-
-  const getActivityColor = (type) => {
-    switch (type) {
-      case 'application':
-        return theme.colors.primary.teal;
-      case 'interview':
-        return theme.colors.primary.orange;
-      case 'message':
-        return theme.colors.primary.deepBlue;
-      case 'profile_view':
-        return theme.colors.status.success;
-      default:
-        return theme.colors.text.secondary;
-    }
-  };
-
-  const formatDate = (dateString) => {
     try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffTime = Math.abs(now - date);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (showLoader && !refreshing) setLoading(true);
 
-      if (diffDays === 1) {
-        return 'Yesterday';
-      } else if (diffDays < 7) {
-        return `${diffDays} days ago`;
+      const params = {
+        jobseeker_id: parseInt(jobseekerId),
+        status: 'pending', // Only show pending proposals on home
+        search_query: '',
+        limit: 10, // Show top 10 matches on home
+        offset: 0,
+      };
+
+      if (__DEV__) {
+        console.log('📤 Loading proposals with params:', params);
+      }
+
+      const response = await apiService.getJobseekerProposals(params);
+
+      if (__DEV__) {
+        console.log('📦 Proposals response:', response);
+      }
+
+      if (response.success) {
+        setMatches(response.data.applications || []);
+        setStats(response.data.stats || { total: 0, pending: 0, accepted: 0, rejected: 0 });
       } else {
-        return date.toLocaleDateString();
+        console.error('❌ Failed to load proposals:', response.message);
+        setMatches([]);
       }
     } catch (error) {
-      return 'Recently';
+      console.error('❌ Error loading proposals:', error);
+      setMatches([]);
+    } finally {
+      if (showLoader) setLoading(false);
     }
   };
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadUserData();
+    await Promise.all([
+      loadInitialData(),
+      loadProposals(false)
+    ]);
     setRefreshing(false);
-  };
+  }, [jobseekerId]);
 
-  // Stats Cards Component - Optimized for small screens
+  // Stats Cards Component
   const StatsCards = () => (
     <View
       style={{
@@ -200,8 +189,9 @@ export default function JobSeekerHome() {
         </Text>
       </View>
 
-      {/* Applications Card */}
-      <View
+      {/* Matches Card */}
+      <TouchableOpacity
+        onPress={() => router.push('/(tabs)/matches')}
         style={{
           flex: 1,
           backgroundColor: theme.colors.background.card,
@@ -212,6 +202,7 @@ export default function JobSeekerHome() {
           borderColor: theme.colors.border.light,
           alignItems: 'center',
         }}
+        activeOpacity={0.7}
       >
         <LinearGradient
           colors={['transparent', 'rgba(255, 138, 61, 0.05)']}
@@ -225,7 +216,7 @@ export default function JobSeekerHome() {
           }}
         />
         <Ionicons
-          name="document-text-outline"
+          name="heart-outline"
           size={24}
           color={theme.colors.primary.orange}
           style={{ marginBottom: theme.spacing.xs }}
@@ -238,7 +229,7 @@ export default function JobSeekerHome() {
             marginBottom: 2,
           }}
         >
-          {userData?.statistics?.total_applications || 0}
+          {stats.pending || 0}
         </Text>
         <Text
           style={{
@@ -249,9 +240,9 @@ export default function JobSeekerHome() {
           }}
           numberOfLines={1}
         >
-          Apps
+          Matches
         </Text>
-      </View>
+      </TouchableOpacity>
 
       {/* Interviews Card */}
       <View
@@ -308,10 +299,10 @@ export default function JobSeekerHome() {
     </View>
   );
 
-  // Job Recommendations Card
-  const RecommendationCard = ({ item }) => (
+  // Match/Proposal Card Component
+  const MatchCard = ({ item }) => (
     <TouchableOpacity
-      onPress={() => router.push(`/job-details/${item.job_id}`)}
+      onPress={() => router.push(`/job-details/${item.application_id}`)}
       style={{
         backgroundColor: theme.colors.background.card,
         borderRadius: theme.borderRadius.lg,
@@ -320,6 +311,7 @@ export default function JobSeekerHome() {
         marginBottom: theme.spacing.md,
         borderWidth: 1,
         borderColor: theme.colors.border.light,
+        ...theme.shadows.sm,
       }}
       activeOpacity={0.9}
     >
@@ -329,55 +321,84 @@ export default function JobSeekerHome() {
           position: 'absolute',
           top: theme.spacing.sm,
           right: theme.spacing.sm,
-          backgroundColor: item.employer_viewed ? theme.colors.primary.orange : theme.colors.status.success,
-          borderRadius: theme.borderRadius.full,
-          paddingHorizontal: theme.spacing.sm,
-          paddingVertical: theme.spacing.xs,
         }}
       >
-        <Text
+        <LinearGradient
+          colors={
+            item.matchPercentage >= 80
+              ? [theme.colors.status.success, '#0D9488']
+              : item.matchPercentage >= 60
+              ? [theme.colors.primary.teal, theme.colors.secondary.darkTeal]
+              : [theme.colors.primary.orange, theme.colors.secondary.darkOrange]
+          }
           style={{
-            fontSize: theme.typography.sizes.xs,
-            fontFamily: theme.typography.fonts.bold,
-            color: theme.colors.neutral.white,
-          }}
-        >
-          {item.employer_viewed ? 'Viewed You' : `${item.match_percentage}% Match`}
-        </Text>
-      </View>
-
-      {/* Company header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: theme.spacing.sm }}>
-        <View
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 20,
-            backgroundColor: theme.colors.background.accent,
-            justifyContent: 'center',
-            alignItems: 'center',
-            marginRight: theme.spacing.sm,
+            borderRadius: theme.borderRadius.full,
+            paddingHorizontal: theme.spacing.sm,
+            paddingVertical: theme.spacing.xs,
           }}
         >
           <Text
             style={{
-              fontSize: theme.typography.sizes.sm,
+              fontSize: theme.typography.sizes.xs,
               fontFamily: theme.typography.fonts.bold,
-              color: theme.colors.primary.teal,
+              color: theme.colors.neutral.white,
             }}
           >
-            {item.company_name.charAt(0)}
+            {item.matchPercentage}% Match
           </Text>
-        </View>
-        <View style={{ flex: 1 }}>
+        </LinearGradient>
+      </View>
+
+      {/* Company header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: theme.spacing.sm }}>
+        {item.companyLogo ? (
+          <Image
+            source={{ uri: item.companyLogo }}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              marginRight: theme.spacing.sm,
+              borderWidth: 2,
+              borderColor: theme.colors.primary.teal,
+            }}
+          />
+        ) : (
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: theme.colors.background.accent,
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginRight: theme.spacing.sm,
+              borderWidth: 2,
+              borderColor: theme.colors.primary.teal,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: theme.typography.sizes.sm,
+                fontFamily: theme.typography.fonts.bold,
+                color: theme.colors.primary.teal,
+              }}
+            >
+              {item.companyInitial}
+            </Text>
+          </View>
+        )}
+        
+        <View style={{ flex: 1, paddingRight: theme.spacing.xl }}>
           <Text
             style={{
               fontSize: theme.typography.sizes.base,
               fontFamily: theme.typography.fonts.semiBold,
               color: theme.colors.text.primary,
             }}
+            numberOfLines={1}
           >
-            {item.company_name}
+            {item.companyName}
           </Text>
           <Text
             style={{
@@ -386,12 +407,12 @@ export default function JobSeekerHome() {
               color: theme.colors.text.secondary,
             }}
           >
-            {item.posted_time}
+            {item.proposalTime}
           </Text>
         </View>
       </View>
 
-      {/* Position and location */}
+      {/* Position */}
       <Text
         style={{
           fontSize: theme.typography.sizes.md,
@@ -399,178 +420,240 @@ export default function JobSeekerHome() {
           color: theme.colors.text.primary,
           marginBottom: theme.spacing.xs,
         }}
+        numberOfLines={2}
       >
         {item.position}
       </Text>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: theme.spacing.sm }}>
-        <Ionicons
-          name="location-outline"
-          size={14}
-          color={theme.colors.text.tertiary}
-          style={{ marginRight: theme.spacing.xs }}
-        />
-        <Text
-          style={{
-            fontSize: theme.typography.sizes.sm,
-            fontFamily: theme.typography.fonts.regular,
-            color: theme.colors.text.secondary,
-          }}
-        >
-          {item.location}
-        </Text>
+      {/* Location and Salary */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: theme.spacing.sm, gap: theme.spacing.md }}>
+        {item.location && (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Ionicons
+              name="location-outline"
+              size={14}
+              color={theme.colors.text.tertiary}
+              style={{ marginRight: theme.spacing.xs }}
+            />
+            <Text
+              style={{
+                fontSize: theme.typography.sizes.sm,
+                fontFamily: theme.typography.fonts.regular,
+                color: theme.colors.text.secondary,
+              }}
+              numberOfLines={1}
+            >
+              {item.location}
+            </Text>
+          </View>
+        )}
+
+        {item.salary && (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Ionicons
+              name="cash-outline"
+              size={14}
+              color={theme.colors.text.tertiary}
+              style={{ marginRight: theme.spacing.xs }}
+            />
+            <Text
+              style={{
+                fontSize: theme.typography.sizes.sm,
+                fontFamily: theme.typography.fonts.regular,
+                color: theme.colors.text.secondary,
+              }}
+              numberOfLines={1}
+            >
+              {item.salary}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Skills */}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: theme.spacing.sm }}>
-        {item.skills.map((skill, index) => (
-          <View
-            key={index}
-            style={{
-              backgroundColor: theme.colors.background.accent,
-              borderRadius: theme.borderRadius.sm,
-              paddingHorizontal: theme.spacing.sm,
-              paddingVertical: theme.spacing.xs,
-              marginRight: theme.spacing.xs,
-              marginBottom: theme.spacing.xs,
-            }}
-          >
-            <Text
+      {item.skills && item.skills.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: theme.spacing.sm, gap: theme.spacing.xs }}>
+          {item.skills.slice(0, 3).map((skill, index) => (
+            <View
+              key={`${item.id}_skill_${index}`}
               style={{
-                fontSize: theme.typography.sizes.xs,
-                fontFamily: theme.typography.fonts.medium,
-                color: theme.colors.primary.teal,
+                backgroundColor: theme.colors.background.accent,
+                borderRadius: theme.borderRadius.sm,
+                paddingHorizontal: theme.spacing.sm,
+                paddingVertical: theme.spacing.xs,
+                borderWidth: 1,
+                borderColor: theme.colors.primary.teal,
               }}
             >
-              {skill}
-            </Text>
-          </View>
-        ))}
-      </View>
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.xs,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: theme.colors.primary.teal,
+                }}
+              >
+                {skill}
+              </Text>
+            </View>
+          ))}
+          {item.skills.length > 3 && (
+            <View
+              style={{
+                backgroundColor: theme.colors.neutral.lightGray,
+                borderRadius: theme.borderRadius.sm,
+                paddingHorizontal: theme.spacing.sm,
+                paddingVertical: theme.spacing.xs,
+                borderWidth: 1,
+                borderColor: theme.colors.border.light,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.xs,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: theme.colors.text.tertiary,
+                }}
+              >
+                +{item.skills.length - 3}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
 
-      {/* Action buttons */}
-      <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
-        <TouchableOpacity
+      {/* Action button */}
+      <TouchableOpacity
+        style={{
+          borderRadius: theme.borderRadius.md,
+          overflow: 'hidden',
+        }}
+        onPress={() => router.push(`/job-details/${item.application_id}`)}
+        activeOpacity={0.9}
+      >
+        <LinearGradient
+          colors={[theme.colors.primary.teal, theme.colors.secondary.darkTeal]}
           style={{
-            flex: 1,
-            backgroundColor: theme.colors.neutral.lightGray,
-            borderRadius: theme.borderRadius.md,
             paddingVertical: theme.spacing.sm,
             alignItems: 'center',
+            flexDirection: 'row',
+            justifyContent: 'center',
           }}
-          activeOpacity={0.8}
         >
           <Text
             style={{
               fontSize: theme.typography.sizes.sm,
-              fontFamily: theme.typography.fonts.medium,
-              color: theme.colors.text.secondary,
+              fontFamily: theme.typography.fonts.semiBold,
+              color: theme.colors.neutral.white,
+              marginRight: theme.spacing.xs,
             }}
           >
-            Save for Later
+            View Proposal
           </Text>
-        </TouchableOpacity>
+          <Ionicons
+            name="arrow-forward"
+            size={14}
+            color={theme.colors.neutral.white}
+          />
+        </LinearGradient>
+      </TouchableOpacity>
 
-        <TouchableOpacity
+      {/* Urgent badge */}
+      {item.isUrgent && (
+        <View
           style={{
-            flex: 1,
-            borderRadius: theme.borderRadius.md,
-            overflow: 'hidden',
+            position: 'absolute',
+            top: theme.spacing.sm,
+            left: theme.spacing.sm,
+            backgroundColor: theme.colors.status.error,
+            borderRadius: theme.borderRadius.sm,
+            paddingHorizontal: theme.spacing.xs,
+            paddingVertical: 2,
           }}
-          onPress={() => router.push(`/job-details/${item.job_id}`)}
-          activeOpacity={0.9}
         >
-          <LinearGradient
-            colors={[theme.colors.primary.teal, theme.colors.secondary.darkTeal]}
+          <Text
             style={{
-              paddingVertical: theme.spacing.sm,
-              alignItems: 'center',
+              fontSize: theme.typography.sizes.xs,
+              fontFamily: theme.typography.fonts.bold,
+              color: theme.colors.neutral.white,
             }}
           >
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.semiBold,
-                color: theme.colors.neutral.white,
-              }}
-            >
-              View Details
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
+            URGENT
+          </Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 
-  // Recent Activity Item
-  const ActivityItem = ({ item }) => (
+  // Empty State for Matches
+  const EmptyMatchesState = () => (
     <View
       style={{
-        flexDirection: 'row',
+        backgroundColor: theme.colors.background.card,
+        marginHorizontal: theme.spacing.lg,
+        borderRadius: theme.borderRadius.lg,
+        padding: theme.spacing.xl,
         alignItems: 'center',
-        paddingVertical: theme.spacing.sm,
-        paddingHorizontal: theme.spacing.lg,
+        borderWidth: 1,
+        borderColor: theme.colors.border.light,
+        marginBottom: theme.spacing.md,
       }}
     >
       <View
         style={{
-          width: 36,
-          height: 36,
-          borderRadius: 18,
-          backgroundColor: `${item.color}15`,
+          width: 60,
+          height: 60,
+          borderRadius: 30,
+          backgroundColor: theme.colors.background.accent,
           justifyContent: 'center',
           alignItems: 'center',
-          marginRight: theme.spacing.md,
+          marginBottom: theme.spacing.md,
         }}
       >
         <Ionicons
-          name={item.icon}
-          size={18}
-          color={item.color}
+          name="heart-outline"
+          size={28}
+          color={theme.colors.primary.teal}
         />
       </View>
-      <View style={{ flex: 1 }}>
-        <Text
-          style={{
-            fontSize: theme.typography.sizes.sm,
-            fontFamily: theme.typography.fonts.medium,
-            color: theme.colors.text.primary,
-            marginBottom: theme.spacing.xs,
-          }}
-        >
-          {item.message}
-        </Text>
-        <Text
-          style={{
-            fontSize: theme.typography.sizes.xs,
-            fontFamily: theme.typography.fonts.regular,
-            color: theme.colors.text.tertiary,
-          }}
-        >
-          {item.time}
-        </Text>
-      </View>
+      <Text
+        style={{
+          fontSize: theme.typography.sizes.base,
+          fontFamily: theme.typography.fonts.semiBold,
+          color: theme.colors.text.primary,
+          marginBottom: theme.spacing.xs,
+          textAlign: 'center',
+        }}
+      >
+        No New Matches Yet
+      </Text>
+      <Text
+        style={{
+          fontSize: theme.typography.sizes.sm,
+          fontFamily: theme.typography.fonts.regular,
+          color: theme.colors.text.secondary,
+          textAlign: 'center',
+          lineHeight: theme.typography.sizes.sm * 1.4,
+        }}
+      >
+        Companies will appear here when they send you job proposals
+      </Text>
     </View>
   );
 
-  // Create a single data array for the FlatList
+  // Create FlatList data
   const createFlatListData = () => {
-    const recommendations = getJobRecommendations();
-    const data = [
-      { type: 'stats', id: 'stats' },
-    ];
+    const data = [{ type: 'stats', id: 'stats' }];
 
-    if (recommendations.length > 0) {
-      data.push(
-        { type: 'recommendations-header', id: 'recommendations-header' },
-        ...recommendations.slice(0, 5).map(item => ({ type: 'recommendation', ...item }))
-      );
+    // Add matches section
+    data.push({ type: 'matches-header', id: 'matches-header' });
+    
+    if (matches.length > 0) {
+      matches.forEach((match) => {
+        data.push({ type: 'match', ...match });
+      });
+    } else {
+      data.push({ type: 'empty-matches', id: 'empty-matches' });
     }
-
-    data.push(
-      { type: 'activity-header', id: 'activity-header' },
-      { type: 'activity-container', id: 'activity-container' }
-    );
 
     return data;
   };
@@ -579,8 +662,8 @@ export default function JobSeekerHome() {
     switch (item.type) {
       case 'stats':
         return <StatsCards />;
-      
-      case 'recommendations-header':
+
+      case 'matches-header':
         return (
           <View
             style={{
@@ -599,90 +682,33 @@ export default function JobSeekerHome() {
                 color: theme.colors.text.primary,
               }}
             >
-              Recommended Jobs ({getJobRecommendations().length})
+              Your Matches {stats.pending > 0 && `(${stats.pending})`}
             </Text>
-            <TouchableOpacity activeOpacity={0.7}>
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.sm,
-                  fontFamily: theme.typography.fonts.medium,
-                  color: theme.colors.primary.teal,
-                }}
+            {matches.length > 0 && (
+              <TouchableOpacity 
+                onPress={() => router.push('/(tabs)/matches')}
+                activeOpacity={0.7}
               >
-                See All
-              </Text>
-            </TouchableOpacity>
-          </View>
-        );
-      
-      case 'recommendation':
-        return <RecommendationCard item={item} />;
-      
-      case 'activity-header':
-        return (
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.md,
-              fontFamily: theme.typography.fonts.bold,
-              color: theme.colors.text.primary,
-              paddingHorizontal: theme.spacing.lg,
-              marginBottom: theme.spacing.md,
-              marginTop: theme.spacing.lg,
-            }}
-          >
-            Recent Activity
-          </Text>
-        );
-      
-      case 'activity-container':
-        const activities = getRecentActivity();
-        return (
-          <View
-            style={{
-              backgroundColor: theme.colors.background.card,
-              marginHorizontal: theme.spacing.lg,
-              borderRadius: theme.borderRadius.lg,
-              borderWidth: 1,
-              borderColor: theme.colors.border.light,
-              marginBottom: theme.spacing.xl,
-            }}
-          >
-            {activities.length > 0 ? (
-              <>
-                {activities.map((activityItem, index) => (
-                  <React.Fragment key={activityItem.id}>
-                    <ActivityItem item={activityItem} />
-                    {index < activities.length - 1 && (
-                      <View
-                        style={{
-                          height: 1,
-                          backgroundColor: theme.colors.border.light,
-                          marginLeft: theme.spacing.lg + 36 + theme.spacing.md,
-                          marginRight: theme.spacing.lg,
-                        }}
-                      />
-                    )}
-                  </React.Fragment>
-                ))}
-              </>
-            ) : (
-              <View style={{
-                padding: theme.spacing.lg,
-                alignItems: 'center'
-              }}>
-                <Text style={{
-                  fontSize: theme.typography.sizes.sm,
-                  fontFamily: theme.typography.fonts.regular,
-                  color: theme.colors.text.tertiary,
-                  textAlign: 'center'
-                }}>
-                  No recent activity. Start applying for jobs to see updates here!
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.sm,
+                    fontFamily: theme.typography.fonts.medium,
+                    color: theme.colors.primary.teal,
+                  }}
+                >
+                  See All
                 </Text>
-              </View>
+              </TouchableOpacity>
             )}
           </View>
         );
-      
+
+      case 'match':
+        return <MatchCard item={item} />;
+
+      case 'empty-matches':
+        return <EmptyMatchesState />;
+
       default:
         return null;
     }
@@ -691,12 +717,14 @@ export default function JobSeekerHome() {
   // Loading Screen
   if (loading) {
     return (
-      <View style={{
-        flex: 1,
-        backgroundColor: theme.colors.background.primary,
-        justifyContent: 'center',
-        alignItems: 'center'
-      }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: theme.colors.background.primary,
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
         <LinearGradient
           colors={[
             theme.colors.background.accent,
@@ -717,12 +745,14 @@ export default function JobSeekerHome() {
           color={theme.colors.primary.teal}
           style={{ marginBottom: theme.spacing.md }}
         />
-        <Text style={{
-          fontSize: theme.typography.sizes.base,
-          fontFamily: theme.typography.fonts.medium,
-          color: theme.colors.text.secondary,
-          textAlign: 'center'
-        }}>
+        <Text
+          style={{
+            fontSize: theme.typography.sizes.base,
+            fontFamily: theme.typography.fonts.medium,
+            color: theme.colors.text.secondary,
+            textAlign: 'center',
+          }}
+        >
           Loading your dashboard...
         </Text>
       </View>
@@ -732,13 +762,15 @@ export default function JobSeekerHome() {
   // Error Screen
   if (error && !userData) {
     return (
-      <View style={{
-        flex: 1,
-        backgroundColor: theme.colors.background.primary,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: theme.spacing.lg
-      }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: theme.colors.background.primary,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: theme.spacing.lg,
+        }}
+      >
         <LinearGradient
           colors={[
             theme.colors.background.accent,
@@ -760,39 +792,45 @@ export default function JobSeekerHome() {
           color={theme.colors.status.error}
           style={{ marginBottom: theme.spacing.lg }}
         />
-        <Text style={{
-          fontSize: theme.typography.sizes.lg,
-          fontFamily: theme.typography.fonts.bold,
-          color: theme.colors.text.primary,
-          textAlign: 'center',
-          marginBottom: theme.spacing.sm
-        }}>
+        <Text
+          style={{
+            fontSize: theme.typography.sizes.lg,
+            fontFamily: theme.typography.fonts.bold,
+            color: theme.colors.text.primary,
+            textAlign: 'center',
+            marginBottom: theme.spacing.sm,
+          }}
+        >
           Oops! Something went wrong
         </Text>
-        <Text style={{
-          fontSize: theme.typography.sizes.base,
-          fontFamily: theme.typography.fonts.regular,
-          color: theme.colors.text.secondary,
-          textAlign: 'center',
-          marginBottom: theme.spacing.xl
-        }}>
+        <Text
+          style={{
+            fontSize: theme.typography.sizes.base,
+            fontFamily: theme.typography.fonts.regular,
+            color: theme.colors.text.secondary,
+            textAlign: 'center',
+            marginBottom: theme.spacing.xl,
+          }}
+        >
           {error}
         </Text>
         <TouchableOpacity
-          onPress={loadUserData}
+          onPress={loadInitialData}
           style={{
             backgroundColor: theme.colors.primary.teal,
             borderRadius: theme.borderRadius.lg,
             paddingHorizontal: theme.spacing.xl,
-            paddingVertical: theme.spacing.md
+            paddingVertical: theme.spacing.md,
           }}
           activeOpacity={0.8}
         >
-          <Text style={{
-            fontSize: theme.typography.sizes.base,
-            fontFamily: theme.typography.fonts.semiBold,
-            color: theme.colors.neutral.white
-          }}>
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.base,
+              fontFamily: theme.typography.fonts.semiBold,
+              color: theme.colors.neutral.white,
+            }}
+          >
             Try Again
           </Text>
         </TouchableOpacity>
@@ -819,27 +857,33 @@ export default function JobSeekerHome() {
         locations={[0, 0.3, 1]}
       />
 
-      {/* Welcome Header with User Data */}
+      {/* Welcome Header */}
       {userData && (
-        <View style={{
-          paddingHorizontal: theme.spacing.lg,
-          paddingTop: theme.spacing.lg,
-          paddingBottom: theme.spacing.md
-        }}>
-          <Text style={{
-            fontSize: theme.typography.sizes.xl,
-            fontFamily: theme.typography.fonts.bold,
-            color: theme.colors.text.primary,
-          }}>
+        <View
+          style={{
+            paddingHorizontal: theme.spacing.lg,
+            paddingTop: theme.spacing.lg,
+            paddingBottom: theme.spacing.md,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.xl,
+              fontFamily: theme.typography.fonts.bold,
+              color: theme.colors.text.primary,
+            }}
+          >
             Welcome back, {userData.first_name}!
           </Text>
           {userData.profile?.current_job_title && (
-            <Text style={{
-              fontSize: theme.typography.sizes.base,
-              fontFamily: theme.typography.fonts.regular,
-              color: theme.colors.text.secondary,
-              marginTop: theme.spacing.xs
-            }}>
+            <Text
+              style={{
+                fontSize: theme.typography.sizes.base,
+                fontFamily: theme.typography.fonts.regular,
+                color: theme.colors.text.secondary,
+                marginTop: theme.spacing.xs,
+              }}
+            >
               {userData.profile.current_job_title}
             </Text>
           )}
@@ -851,6 +895,7 @@ export default function JobSeekerHome() {
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: theme.spacing.xl }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

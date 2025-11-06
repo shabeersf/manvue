@@ -3,7 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import { API_CONFIG } from "../config/api";
 
 // Create axios instance
-const apiClient = axios.create({
+export const apiClient = axios.create({
   baseURL: API_CONFIG.BASE_URL,
   timeout: API_CONFIG.TIMEOUT,
   headers: API_CONFIG.HEADERS,
@@ -204,13 +204,7 @@ class ApiService {
   // Signup API
   async signup(userData) {
     try {
-      // First try simple JSON if userData is not FormData
-      if (!(userData instanceof FormData)) {
-        const jsonResult = await this.testSignup(userData);
-        if (jsonResult) return jsonResult;
-      }
-
-      // If userData is already FormData, use it directly, otherwise create new FormData
+      // Ensure userData is FormData
       let formData;
       if (userData instanceof FormData) {
         formData = userData;
@@ -219,19 +213,36 @@ class ApiService {
         // Add all form fields
         Object.keys(userData).forEach((key) => {
           if (key === "skills" && Array.isArray(userData[key])) {
-            // ✅ Send as JSON string - your backend already expects this!
             formData.append("skills", JSON.stringify(userData[key]));
           } else if (
             key === "preferred_locations" &&
             Array.isArray(userData[key])
           ) {
-            // ✅ Also handle preferred_locations as JSON
             formData.append(
               "preferred_locations",
               JSON.stringify(userData[key])
             );
+          } else if (
+            key === "job_type_preference" &&
+            Array.isArray(userData[key])
+          ) {
+            formData.append(
+              "job_type_preference",
+              JSON.stringify(userData[key])
+            );
+          } else if (
+            key === "work_mode_preference" &&
+            Array.isArray(userData[key])
+          ) {
+            formData.append(
+              "work_mode_preference",
+              JSON.stringify(userData[key])
+            );
+          } else if (key === "educationList" && Array.isArray(userData[key])) {
+            formData.append("educationList", JSON.stringify(userData[key]));
+          } else if (key === "workList" && Array.isArray(userData[key])) {
+            formData.append("workList", JSON.stringify(userData[key]));
           } else if (key === "profile_image" && userData[key]) {
-            // Handle profile image
             formData.append("profile_image", userData[key]);
           } else if (userData[key] !== null && userData[key] !== undefined) {
             formData.append(key, userData[key]);
@@ -243,66 +254,73 @@ class ApiService {
       if (__DEV__) {
         console.log("🚀 Signup FormData contents:");
         for (let [key, value] of formData.entries()) {
-          console.log(`${key}:`, value);
+          if (key === "profile_image") {
+            console.log(`${key}:`, "File object");
+          } else {
+            console.log(`${key}:`, value);
+          }
         }
       }
 
+      // Important: Don't set Content-Type header for FormData
+      // Axios will automatically set it with correct boundary
       const response = await apiClient.post(
         API_CONFIG.ENDPOINTS.SIGNUP,
         formData,
         {
           headers: {
-            "Content-Type": "multipart/form-data",
+            // Remove Content-Type - let axios handle it automatically
             Accept: "application/json",
           },
         }
       );
 
-      // Store JWT token if provided
-      if (response.data.jwt_token) {
-        setStoredToken(response.data.jwt_token);
+      if (__DEV__) {
+        console.log("✅ Signup API Response:", response.data);
       }
 
-      // Store user type and user ID for routing
-      if (response.data.data) {
-        if (response.data.data.user_type) {
-          setStoredUserType(response.data.data.user_type);
-        }
-        if (response.data.data.user_id) {
-          setStoredUserId(response.data.data.user_id);
-        }
+      // Store JWT token if provided
+      if (response.data?.jwt_token || response.data?.token) {
+        const token = response.data.jwt_token || response.data.token;
+        await SecureStore.setItemAsync("jwt_token", token);
       }
 
       return {
-        success: true,
-        data: response.data.data,
-        token: response.data.jwt_token,
-        message: response.data.message,
+        success: response.data?.success || false,
+        data: response.data?.data || {},
+        token: response.data?.jwt_token || response.data?.token || null,
+        message: response.data?.message || "Signup successful",
+        payment_required: response.data?.payment_required || false,
+        errors: response.data?.errors || [],
       };
     } catch (error) {
       // Enhanced error logging
       if (__DEV__) {
-        console.log("❌ Signup API Error:", error);
+        console.log("❌ Signup API Error Details:");
         if (error.response) {
-          console.log("❌ Error Response Status:", error.response.status);
-          console.log("❌ Error Response Data:", error.response.data);
-          console.log("❌ Error Response Headers:", error.response.headers);
+          console.log("❌ Status:", error.response.status);
+          console.log("❌ Data:", error.response.data);
+          console.log("❌ Message:", error.response.data?.message);
+          console.log("❌ Errors:", error.response.data?.errors);
         } else if (error.request) {
-          console.log("❌ Error Request:", error.request);
+          console.log("❌ No response received:", error.request);
         } else {
-          console.log("❌ Error Message:", error.message);
+          console.log("❌ Error:", error.message);
         }
       }
 
+      // Extract error details from response
+      const errorData = error.response?.data || {};
+
       return {
         success: false,
-        errors: error.response?.data?.errors ||
-          error.data?.data?.errors || [error.message || "Signup failed"],
+        errors: errorData?.errors || [error.message || "Signup failed"],
         message:
-          error.response?.data?.message ||
-          error.data?.message ||
-          "Registration failed",
-        data: error.response?.data || null,
+          errorData?.message ||
+          error.message ||
+          "Registration failed. Please try again.",
+        data: null,
+        payment_required: false,
       };
     }
   }
@@ -329,32 +347,59 @@ class ApiService {
         console.log("🏢 Employer Signup Response:", response.data);
       }
 
-      return {
-        success: true,
-        data: response.data.data,
-        message: response.data.message,
-        requiresApproval: response.data.requires_approval || false,
-      };
+      // Check if the response indicates success
+      if (response.data.success) {
+        return {
+          success: true,
+          data: response.data.data,
+          token: response.data.token || response.data.jwt_token,
+          message: response.data.message,
+          requiresApproval: response.data.data?.status === "inactive",
+        };
+      } else {
+        // Backend returned errors in success response (shouldn't happen but handle it)
+        return {
+          success: false,
+          errors: response.data.errors || [
+            response.data.message || "Registration failed",
+          ],
+          message: response.data.message || "Registration failed",
+        };
+      }
     } catch (error) {
       if (__DEV__) {
-        console.log("❌ Employer Signup Error:", error);
+        console.error("❌ Employer Signup Error:", error);
         if (error.response) {
-          console.log("❌ Error Response Status:", error.response.status);
-          console.log("❌ Error Response Data:", error.response.data);
+          console.error("❌ Error Response Status:", error.response.status);
+          console.error("❌ Error Response Data:", error.response.data);
         }
       }
 
-      return {
-        success: false,
-        errors: error.response?.data?.errors ||
-          error.data?.data?.errors || [
-            error.message || "Employer signup failed",
+      // Handle different error scenarios
+      if (error.response) {
+        // Server responded with error status (422, 500, etc.)
+        return {
+          success: false,
+          errors: error.response.data?.errors || [
+            error.response.data?.message || "Registration failed",
           ],
-        message:
-          error.response?.data?.message ||
-          error.data?.message ||
-          "Registration failed",
-      };
+          message: error.response.data?.message || "Registration failed",
+        };
+      } else if (error.request) {
+        // Request was made but no response received (network error)
+        return {
+          success: false,
+          errors: ["Network error. Please check your internet connection."],
+          message: "Network error. Please check your internet connection.",
+        };
+      } else {
+        // Something else went wrong
+        return {
+          success: false,
+          errors: [error.message || "An unexpected error occurred"],
+          message: error.message || "An unexpected error occurred",
+        };
+      }
     }
   }
 
@@ -2466,8 +2511,6 @@ class ApiService {
     }
   }
 
-  
-
   /**
    * Mark messages as read in a conversation
    * @param {number} conversationId - The conversation ID
@@ -2895,251 +2938,337 @@ class ApiService {
     }
   }
   /**
- * Get Jobseeker Chat List
- * Fetches all conversations for a jobseeker with filtering and search
- * @param {string} searchQuery - Search term (optional)
- * @param {string} filter - Filter type: 'all', 'unread', 'blocked' (default: 'all')
- * @param {number} limit - Number of conversations to fetch (default: 50)
- * @param {number} offset - Pagination offset (default: 0)
- * @returns {Promise} API response with conversations array
- */
-async getJobseekerChatList(searchQuery = "", filter = "all", limit = 50, offset = 0) {
-  try {
-    const userId = await SecureStore.getItemAsync("user_id");
+   * Get Jobseeker Chat List
+   * Fetches all conversations for a jobseeker with filtering and search
+   * @param {string} searchQuery - Search term (optional)
+   * @param {string} filter - Filter type: 'all', 'unread', 'blocked' (default: 'all')
+   * @param {number} limit - Number of conversations to fetch (default: 50)
+   * @param {number} offset - Pagination offset (default: 0)
+   * @returns {Promise} API response with conversations array
+   */
+  async getJobseekerChatList(
+    searchQuery = "",
+    filter = "all",
+    limit = 50,
+    offset = 0
+  ) {
+    try {
+      const userId = await SecureStore.getItemAsync("user_id");
 
-    if (!userId) {
-      throw new Error("User ID not found");
+      if (!userId) {
+        throw new Error("User ID not found");
+      }
+
+      if (__DEV__) {
+        console.log("📥 Jobseeker Chat List Request:", {
+          userId,
+          searchQuery,
+          filter,
+          limit,
+          offset,
+        });
+      }
+
+      const formData = new FormData();
+      formData.append("user_id", userId);
+
+      if (searchQuery && searchQuery.trim()) {
+        formData.append("search_query", searchQuery.trim());
+      }
+
+      if (filter && filter !== "all") {
+        formData.append("filter", filter);
+      }
+
+      formData.append("limit", limit.toString());
+      formData.append("offset", offset.toString());
+
+      const response = await apiClient.post(
+        API_CONFIG.ENDPOINTS.JOBSEEKER_CHAT_LIST,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+            Accept: "application/json",
+          },
+        }
+      );
+
+      if (__DEV__) {
+        console.log("✅ Jobseeker Chat List Success:", {
+          count: response.data.data?.conversations?.length || 0,
+          filterCounts: response.data.data?.filter_counts,
+        });
+      }
+
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message,
+      };
+    } catch (error) {
+      if (__DEV__) {
+        console.log("❌ Jobseeker Chat List Error:", error);
+        if (error.response) {
+          console.log("❌ Error Status:", error.response.status);
+          console.log("❌ Error Data:", error.response.data);
+        }
+      }
+
+      return {
+        success: false,
+        errors: error.response?.data?.errors ||
+          error.data?.errors || [
+            error.message || "Failed to fetch conversations",
+          ],
+        message:
+          error.response?.data?.message ||
+          error.data?.message ||
+          "Failed to fetch conversations",
+        data: null,
+      };
     }
+  }
 
-    if (__DEV__) {
-      console.log("📥 Jobseeker Chat List Request:", {
-        userId,
-        searchQuery,
-        filter,
-        limit,
-        offset,
+  async sendMessage2(conversationId, messageText, messageType = "text") {
+    try {
+      const userId = await SecureStore.getItemAsync("user_id");
+
+      if (!userId) {
+        throw new Error("User ID not found");
+      }
+
+      if (__DEV__) {
+        console.log("📤 Send Message:", {
+          userId,
+          conversationId,
+          messageType,
+        });
+      }
+
+      const formData = new FormData();
+      formData.append("user_id", userId);
+      formData.append("conversation_id", conversationId.toString());
+      formData.append("message_text", messageText);
+      formData.append("message_type", messageType);
+
+      const response = await apiClient.post(
+        API_CONFIG.ENDPOINTS.SEND_MESSAGE2,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+            Accept: "application/json",
+          },
+        }
+      );
+
+      if (__DEV__) {
+        console.log("✅ Message Sent:", response.data);
+      }
+
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message,
+      };
+    } catch (error) {
+      if (__DEV__) {
+        console.log("❌ Send Message Error:", error);
+      }
+
+      return {
+        success: false,
+        errors: error.response?.data?.errors || [
+          error.message || "Failed to send message",
+        ],
+        message: error.response?.data?.message || "Failed to send message",
+        data: null,
+      };
+    }
+  }
+
+  async sendMessageWithFile(conversationId, messageText = "", file) {
+    try {
+      const userId = await SecureStore.getItemAsync("user_id");
+
+      if (!userId) {
+        throw new Error("User ID not found");
+      }
+
+      if (__DEV__) {
+        console.log("📤 Send File:", {
+          userId,
+          conversationId,
+          fileName: file.name,
+        });
+      }
+
+      const formData = new FormData();
+      formData.append("user_id", userId);
+      formData.append("conversation_id", conversationId.toString());
+      formData.append("message_text", messageText);
+      formData.append("message_type", "file");
+
+      formData.append("file", {
+        uri: file.uri,
+        type: file.mimeType || "application/octet-stream",
+        name: file.name,
       });
-    }
 
-    const formData = new FormData();
-    formData.append("user_id", userId);
-    
-    if (searchQuery && searchQuery.trim()) {
-      formData.append("search_query", searchQuery.trim());
-    }
-    
-    if (filter && filter !== "all") {
-      formData.append("filter", filter);
-    }
-    
-    formData.append("limit", limit.toString());
-    formData.append("offset", offset.toString());
+      const response = await apiClient.post(
+        API_CONFIG.ENDPOINTS.SEND_MESSAGE,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+            Accept: "application/json",
+          },
+        }
+      );
 
-    const response = await apiClient.post(
-      API_CONFIG.ENDPOINTS.JOBSEEKER_CHAT_LIST,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          Accept: "application/json",
-        },
+      if (__DEV__) {
+        console.log("✅ File Sent:", response.data);
       }
-    );
 
-    if (__DEV__) {
-      console.log("✅ Jobseeker Chat List Success:", {
-        count: response.data.data?.conversations?.length || 0,
-        filterCounts: response.data.data?.filter_counts,
-      });
-    }
-
-    return {
-      success: true,
-      data: response.data.data,
-      message: response.data.message,
-    };
-  } catch (error) {
-    if (__DEV__) {
-      console.log("❌ Jobseeker Chat List Error:", error);
-      if (error.response) {
-        console.log("❌ Error Status:", error.response.status);
-        console.log("❌ Error Data:", error.response.data);
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message,
+      };
+    } catch (error) {
+      if (__DEV__) {
+        console.log("❌ Send File Error:", error);
       }
-    }
 
-    return {
-      success: false,
-      errors: error.response?.data?.errors || error.data?.errors || [error.message || "Failed to fetch conversations"],
-      message: error.response?.data?.message || error.data?.message || "Failed to fetch conversations",
-      data: null,
-    };
+      return {
+        success: false,
+        errors: error.response?.data?.errors || [
+          error.message || "Failed to send file",
+        ],
+        message: error.response?.data?.message || "Failed to send file",
+        data: null,
+      };
+    }
   }
-}
+  async getConversationMessages2(conversationId, limit = 50, offset = 0) {
+    try {
+      const userId = await SecureStore.getItemAsync("user_id");
 
-async sendMessage2(conversationId, messageText, messageType = "text") {
-  try {
-    const userId = await SecureStore.getItemAsync("user_id");
-
-    if (!userId) {
-      throw new Error("User ID not found");
-    }
-
-    if (__DEV__) {
-      console.log("📤 Send Message:", { userId, conversationId, messageType });
-    }
-
-    const formData = new FormData();
-    formData.append("user_id", userId);
-    formData.append("conversation_id", conversationId.toString());
-    formData.append("message_text", messageText);
-    formData.append("message_type", messageType);
-
-    const response = await apiClient.post(
-      API_CONFIG.ENDPOINTS.SEND_MESSAGE2,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          Accept: "application/json",
-        },
+      if (!userId) {
+        throw new Error("User ID not found");
       }
-    );
 
-    if (__DEV__) {
-      console.log("✅ Message Sent:", response.data);
-    }
-
-    return {
-      success: true,
-      data: response.data.data,
-      message: response.data.message,
-    };
-  } catch (error) {
-    if (__DEV__) {
-      console.log("❌ Send Message Error:", error);
-    }
-
-    return {
-      success: false,
-      errors: error.response?.data?.errors || [error.message || "Failed to send message"],
-      message: error.response?.data?.message || "Failed to send message",
-      data: null,
-    };
-  }
-}
-
-async sendMessageWithFile(conversationId, messageText = "", file) {
-  try {
-    const userId = await SecureStore.getItemAsync("user_id");
-
-    if (!userId) {
-      throw new Error("User ID not found");
-    }
-
-    if (__DEV__) {
-      console.log("📤 Send File:", { userId, conversationId, fileName: file.name });
-    }
-
-    const formData = new FormData();
-    formData.append("user_id", userId);
-    formData.append("conversation_id", conversationId.toString());
-    formData.append("message_text", messageText);
-    formData.append("message_type", "file");
-    
-    formData.append("file", {
-      uri: file.uri,
-      type: file.mimeType || 'application/octet-stream',
-      name: file.name,
-    });
-
-    const response = await apiClient.post(
-      API_CONFIG.ENDPOINTS.SEND_MESSAGE,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          Accept: "application/json",
-        },
+      if (__DEV__) {
+        console.log("📥 Get Conversation Messages:", {
+          userId,
+          conversationId,
+          limit,
+          offset,
+        });
       }
-    );
 
-    if (__DEV__) {
-      console.log("✅ File Sent:", response.data);
-    }
+      const formData = new FormData();
+      formData.append("user_id", userId);
+      formData.append("conversation_id", conversationId.toString());
+      formData.append("limit", limit.toString());
+      formData.append("offset", offset.toString());
 
-    return {
-      success: true,
-      data: response.data.data,
-      message: response.data.message,
-    };
-  } catch (error) {
-    if (__DEV__) {
-      console.log("❌ Send File Error:", error);
-    }
+      const response = await apiClient.post(
+        API_CONFIG.ENDPOINTS.GET_CONVERSATION_MESSAGES2,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+            Accept: "application/json",
+          },
+        }
+      );
 
-    return {
-      success: false,
-      errors: error.response?.data?.errors || [error.message || "Failed to send file"],
-      message: error.response?.data?.message || "Failed to send file",
-      data: null,
-    };
-  }
-}
-async getConversationMessages2(conversationId, limit = 50, offset = 0) {
-  try {
-    const userId = await SecureStore.getItemAsync("user_id");
-
-    if (!userId) {
-      throw new Error("User ID not found");
-    }
-
-    if (__DEV__) {
-      console.log("📥 Get Conversation Messages:", { userId, conversationId, limit, offset });
-    }
-
-    const formData = new FormData();
-    formData.append("user_id", userId);
-    formData.append("conversation_id", conversationId.toString());
-    formData.append("limit", limit.toString());
-    formData.append("offset", offset.toString());
-
-    const response = await apiClient.post(
-      API_CONFIG.ENDPOINTS.GET_CONVERSATION_MESSAGES2,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          Accept: "application/json",
-        },
+      if (__DEV__) {
+        console.log("✅ Messages Success:", {
+          count: response.data.data?.messages?.length || 0,
+        });
       }
-    );
 
-    if (__DEV__) {
-      console.log("✅ Messages Success:", { count: response.data.data?.messages?.length || 0 });
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message,
+      };
+    } catch (error) {
+      if (__DEV__) {
+        console.log("❌ Get Messages Error:", error);
+      }
+
+      return {
+        success: false,
+        errors: error.response?.data?.errors || [
+          error.message || "Failed to fetch messages",
+        ],
+        message: error.response?.data?.message || "Failed to fetch messages",
+        data: null,
+      };
     }
-
-    return {
-      success: true,
-      data: response.data.data,
-      message: response.data.message,
-    };
-  } catch (error) {
-    if (__DEV__) {
-      console.log("❌ Get Messages Error:", error);
-    }
-
-    return {
-      success: false,
-      errors: error.response?.data?.errors || [error.message || "Failed to fetch messages"],
-      message: error.response?.data?.message || "Failed to fetch messages",
-      data: null,
-    };
   }
-}
 
+  // Add this method to your ApiService class in apiService.js
 
+  /**
+   * Get Employer Home Dashboard
+   * Fetches statistics and recent candidate matches for employer home screen
+   * @param {Object} params - { employer_user_id, company_id, match_limit }
+   * @returns {Promise} API response with dashboard data
+   */
+  async getEmployerHomeDashboard(params) {
+    try {
+      const { employer_user_id, company_id, match_limit = 5 } = params;
 
+      if (__DEV__) {
+        console.log("🏠 Get Employer Home Dashboard Request:", params);
+      }
 
+      const formData = new FormData();
+      formData.append("employer_user_id", employer_user_id.toString());
+      formData.append("company_id", company_id.toString());
+      formData.append("match_limit", match_limit.toString());
+
+      const response = await apiClient.post(
+        "/employer-home-dashboard.php", // Add this endpoint to API_CONFIG.ENDPOINTS
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+            Accept: "application/json",
+          },
+        }
+      );
+
+      if (__DEV__) {
+        console.log("✅ Employer Home Dashboard Success:", response.data);
+      }
+
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message,
+      };
+    } catch (error) {
+      if (__DEV__) {
+        console.log("❌ Employer Home Dashboard Error:", error);
+      }
+
+      return {
+        success: false,
+        errors: error.response?.data?.errors || [
+          error.message || "Failed to fetch dashboard data",
+        ],
+        message:
+          error.response?.data?.message || "Failed to fetch dashboard data",
+        data: null,
+      };
+    }
+  }
 }
 
 // Create and export service instance

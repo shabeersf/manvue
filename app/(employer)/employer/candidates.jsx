@@ -2,12 +2,13 @@ import apiService from "@/services/apiService";
 import theme from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Dimensions,
   FlatList,
   Image,
@@ -23,7 +24,7 @@ const { width } = Dimensions.get("window");
 export default function EmployerCandidates() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState("all"); // 'all', 'discovered', 'proposal_sent', 'accepted'
+  const [activeFilter, setActiveFilter] = useState("all");
   const [candidates, setCandidates] = useState([]);
   const [stats, setStats] = useState({
     total_matches: 0,
@@ -40,18 +41,45 @@ export default function EmployerCandidates() {
   });
   const [employerUserId, setEmployerUserId] = useState(null);
   const [companyId, setCompanyId] = useState(null);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Auto-refresh interval ref
+  const refreshIntervalRef = useRef(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   // Load user data
   useEffect(() => {
     loadUserData();
+    
+    // Fade in animation
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start();
+
+    // Setup auto-refresh every 30 seconds
+    refreshIntervalRef.current = setInterval(() => {
+      if (employerUserId && companyId) {
+        loadCandidates(true, true); // silent refresh
+      }
+    }, 30000);
+
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    };
   }, []);
 
   // Load candidates when filters change
-  useEffect(() => {
+useFocusEffect(
+  useCallback(() => {
     if (employerUserId && companyId) {
-      loadCandidates(true); // true = reset pagination
+      loadCandidates(true);
     }
-  }, [activeFilter, employerUserId, companyId]);
+  }, [activeFilter, employerUserId, companyId])
+);
 
   const loadUserData = async () => {
     try {
@@ -66,17 +94,19 @@ export default function EmployerCandidates() {
         router.replace("/(auth)/login");
       }
     } catch (error) {
-      console.error("Failed to load user data:", error);
+      console.error("❌ Failed to load user data:", error);
       Alert.alert("Error", "Failed to load user data");
     }
   };
 
-  const loadCandidates = async (resetPagination = false) => {
+  const loadCandidates = async (resetPagination = false, silentRefresh = false) => {
     if (!employerUserId || !companyId) return;
 
     try {
       if (resetPagination) {
-        setIsLoading(true);
+        if (!silentRefresh) {
+          setIsLoading(true);
+        }
         setPagination({ limit: 20, offset: 0 });
       } else {
         setIsLoadingMore(true);
@@ -91,37 +121,51 @@ export default function EmployerCandidates() {
         offset: resetPagination ? 0 : pagination.offset,
       };
 
-      // console.log("📤 Loading candidates with params:", params);
+      if (__DEV__ && !silentRefresh) {
+        console.log("📤 Loading candidates with params:", params);
+      }
 
       const response = await apiService.getMatchingCandidates(params);
 
-      console.log("📦 Candidates response:", response);
+      if (__DEV__ && !silentRefresh) {
+        console.log("📦 Candidates response:", response);
+      }
 
       if (response.success) {
         const newCandidates = response.data.candidates || [];
-        const totalCount = response.data.total_count || 0;
         const newStats = response.data.stats || {};
         const paginationData = response.data.pagination || {};
+        const newTotalCount = response.data.total_count || 0;
 
         if (resetPagination) {
           setCandidates(newCandidates);
         } else {
-          setCandidates((prev) => [...prev, ...newCandidates]);
+          // Merge new candidates, avoiding duplicates by user_id
+          setCandidates((prev) => {
+            const existingIds = new Set(prev.map(c => c.user_id));
+            const uniqueNew = newCandidates.filter(c => !existingIds.has(c.user_id));
+            return [...prev, ...uniqueNew];
+          });
         }
 
         setStats(newStats);
+        setTotalCount(newTotalCount);
         setHasMore(paginationData.has_more || false);
         setPagination({
           limit: paginationData.limit || 20,
-          offset: (paginationData.offset || 0) + (paginationData.limit || 20),
+          offset: paginationData.offset + paginationData.current_count || 0,
         });
       } else {
-        console.error("Failed to load candidates:", response.message);
-        Alert.alert("Error", response.message || "Failed to load candidates");
+        console.error("❌ Failed to load candidates:", response.message);
+        if (!silentRefresh) {
+          Alert.alert("Error", response.message || "Failed to load candidates");
+        }
       }
     } catch (error) {
-      console.error("Error loading candidates:", error);
-      Alert.alert("Error", "Failed to load candidates. Please try again.");
+      console.error("❌ Error loading candidates:", error);
+      if (!silentRefresh) {
+        Alert.alert("Error", "Failed to load candidates. Please try again.");
+      }
     } finally {
       setIsLoading(false);
       setIsLoadingMore(false);
@@ -146,22 +190,18 @@ export default function EmployerCandidates() {
 
   const handleFilterChange = (filter) => {
     setActiveFilter(filter);
-    // loadCandidates will be called by useEffect
   };
 
-  const handleSendProposal = (candidateId) => {
-    
-            // Navigate to proposal screen with candidate ID
-            router.push(`/candidate-details/${candidateId}`);
-         
+  const handleSendProposal = (candidateUserId) => {
+    router.push(`/candidate-details/${candidateUserId}`);
   };
 
-  const handleViewCandidate = (candidateId) => {
-    router.push(`/candidate-details/${candidateId}`);
+  const handleViewCandidate = (candidateUserId) => {
+    router.push(`/candidate-details/${candidateUserId}`);
   };
 
-  const handleStartConversation = (candidateId) => {
-    router.push(`/chats/${candidateId}`);
+  const handleStartConversation = (item) => {
+    router.push(`/chat/${item.jobseeker_id}/${item.application_id}/${item.conversation_id}`);
   };
 
   // Header Component
@@ -172,8 +212,7 @@ export default function EmployerCandidates() {
         paddingHorizontal: theme.spacing.lg,
         paddingTop: theme.spacing.md,
         paddingBottom: theme.spacing.sm,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border.light,
+        ...theme.shadows.sm,
       }}
     >
       {/* Discovery Stats */}
@@ -191,11 +230,13 @@ export default function EmployerCandidates() {
             borderRadius: theme.borderRadius.lg,
             padding: theme.spacing.md,
             alignItems: "center",
+            borderWidth: 1,
+            borderColor: `${theme.colors.primary.teal}20`,
           }}
         >
           <Text
             style={{
-              fontSize: theme.typography.sizes.xl,
+              fontSize: theme.typography.sizes.xxl,
               fontFamily: theme.typography.fonts.bold,
               color: theme.colors.primary.teal,
             }}
@@ -208,6 +249,7 @@ export default function EmployerCandidates() {
               fontFamily: theme.typography.fonts.medium,
               color: theme.colors.text.secondary,
               textAlign: "center",
+              marginTop: theme.spacing.xs,
             }}
           >
             Total Matches
@@ -217,15 +259,17 @@ export default function EmployerCandidates() {
         <View
           style={{
             flex: 1,
-            backgroundColor: theme.colors.background.accent,
+            backgroundColor: `${theme.colors.primary.orange}10`,
             borderRadius: theme.borderRadius.lg,
             padding: theme.spacing.md,
             alignItems: "center",
+            borderWidth: 1,
+            borderColor: `${theme.colors.primary.orange}20`,
           }}
         >
           <Text
             style={{
-              fontSize: theme.typography.sizes.xl,
+              fontSize: theme.typography.sizes.xxl,
               fontFamily: theme.typography.fonts.bold,
               color: theme.colors.primary.orange,
             }}
@@ -238,24 +282,27 @@ export default function EmployerCandidates() {
               fontFamily: theme.typography.fonts.medium,
               color: theme.colors.text.secondary,
               textAlign: "center",
+              marginTop: theme.spacing.xs,
             }}
           >
-            New Discoveries
+            New Finds
           </Text>
         </View>
 
         <View
           style={{
             flex: 1,
-            backgroundColor: theme.colors.background.accent,
+            backgroundColor: `${theme.colors.status.success}10`,
             borderRadius: theme.borderRadius.lg,
             padding: theme.spacing.md,
             alignItems: "center",
+            borderWidth: 1,
+            borderColor: `${theme.colors.status.success}20`,
           }}
         >
           <Text
             style={{
-              fontSize: theme.typography.sizes.xl,
+              fontSize: theme.typography.sizes.xxl,
               fontFamily: theme.typography.fonts.bold,
               color: theme.colors.status.success,
             }}
@@ -268,6 +315,7 @@ export default function EmployerCandidates() {
               fontFamily: theme.typography.fonts.medium,
               color: theme.colors.text.secondary,
               textAlign: "center",
+              marginTop: theme.spacing.xs,
             }}
           >
             Accepted
@@ -283,13 +331,15 @@ export default function EmployerCandidates() {
           backgroundColor: theme.colors.neutral.lightGray,
           borderRadius: theme.borderRadius.lg,
           paddingHorizontal: theme.spacing.md,
-          paddingVertical: theme.spacing.sm,
+          paddingVertical: theme.spacing.sm + 2,
           marginBottom: theme.spacing.md,
+          borderWidth: 1,
+          borderColor: theme.colors.border.light,
         }}
       >
         <Ionicons
           name="search"
-          size={16}
+          size={18}
           color={theme.colors.text.tertiary}
           style={{ marginRight: theme.spacing.sm }}
         />
@@ -304,6 +354,7 @@ export default function EmployerCandidates() {
             fontSize: theme.typography.sizes.base,
             fontFamily: theme.typography.fonts.regular,
             color: theme.colors.text.primary,
+            paddingVertical: 0,
           }}
           returnKeyType="search"
         />
@@ -316,8 +367,8 @@ export default function EmployerCandidates() {
             style={{ padding: theme.spacing.xs }}
           >
             <Ionicons
-              name="close"
-              size={16}
+              name="close-circle"
+              size={18}
               color={theme.colors.text.tertiary}
             />
           </TouchableOpacity>
@@ -325,16 +376,18 @@ export default function EmployerCandidates() {
       </View>
 
       {/* Filter Tabs */}
-      <View style={{ flexDirection: "row", gap: theme.spacing.sm }}>
+      <View 
+        style={{ 
+          flexDirection: "row", 
+          gap: theme.spacing.sm,
+          flexWrap: "wrap",
+        }}
+      >
         {[
-          { id: "all", label: "All Matches", count: stats.total_matches },
-          { id: "discovered", label: "New", count: stats.new_discoveries },
-          {
-            id: "proposal_sent",
-            label: "Proposals",
-            count: stats.proposals_sent,
-          },
-          { id: "accepted", label: "Accepted", count: stats.accepted },
+          { id: "all", label: "All", count: stats.total_matches, icon: "people" },
+          { id: "discovered", label: "New", count: stats.new_discoveries, icon: "star" },
+          { id: "submitted", label: "Proposals", count: stats.proposals_sent, icon: "paper-plane" },
+          { id: "accepted", label: "Accepted", count: stats.accepted, icon: "checkmark-circle" },
         ].map((filter) => (
           <TouchableOpacity
             key={filter.id}
@@ -349,9 +402,24 @@ export default function EmployerCandidates() {
                   : theme.colors.background.accent,
               flexDirection: "row",
               alignItems: "center",
+              borderWidth: 1,
+              borderColor:
+                activeFilter === filter.id
+                  ? theme.colors.primary.teal
+                  : theme.colors.border.light,
             }}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
+            <Ionicons
+              name={filter.icon}
+              size={14}
+              color={
+                activeFilter === filter.id
+                  ? theme.colors.neutral.white
+                  : theme.colors.text.secondary
+              }
+              style={{ marginRight: theme.spacing.xs }}
+            />
             <Text
               style={{
                 fontSize: theme.typography.sizes.sm,
@@ -375,16 +443,16 @@ export default function EmployerCandidates() {
                       ? "rgba(255, 255, 255, 0.3)"
                       : theme.colors.primary.teal,
                   borderRadius: theme.borderRadius.full,
-                  paddingHorizontal: theme.spacing.xs,
+                  paddingHorizontal: theme.spacing.xs + 2,
                   paddingVertical: 2,
                   marginLeft: theme.spacing.xs,
-                  minWidth: 18,
+                  minWidth: 20,
                   alignItems: "center",
                 }}
               >
                 <Text
                   style={{
-                    fontSize: theme.typography.sizes.xs,
+                    fontSize: theme.typography.sizes.xs - 1,
                     fontFamily: theme.typography.fonts.bold,
                     color: theme.colors.neutral.white,
                   }}
@@ -400,12 +468,23 @@ export default function EmployerCandidates() {
   );
 
   // Candidate Item Component
-  const CandidateItem = ({ item }) => {
+  const CandidateItem = ({ item, index }) => {
+    const [itemFade] = useState(new Animated.Value(0));
+
+    useEffect(() => {
+      Animated.timing(itemFade, {
+        toValue: 1,
+        duration: 300,
+        delay: index * 50,
+        useNativeDriver: true,
+      }).start();
+    }, []);
+
     const getStatusColor = () => {
       switch (item.status) {
         case "discovered":
           return theme.colors.primary.orange;
-        case "proposal_sent":
+        case "submitted":
           return theme.colors.primary.deepBlue;
         case "accepted":
           return theme.colors.status.success;
@@ -420,7 +499,7 @@ export default function EmployerCandidates() {
       switch (item.status) {
         case "discovered":
           return "New Discovery";
-        case "proposal_sent":
+        case "submitted":
           return "Proposal Sent";
         case "accepted":
           return "Accepted";
@@ -431,493 +510,560 @@ export default function EmployerCandidates() {
       }
     };
 
+    const getStatusIcon = () => {
+      switch (item.status) {
+        case "discovered":
+          return "star";
+        case "submitted":
+          return "paper-plane";
+        case "accepted":
+          return "checkmark-circle";
+        case "rejected":
+          return "close-circle";
+        default:
+          return "help-circle";
+      }
+    };
+
     return (
-      <TouchableOpacity
-        onPress={() => handleViewCandidate(item.user_id)}
-        style={{
-          backgroundColor: theme.colors.background.card,
-          borderRadius: theme.borderRadius.lg,
-          padding: theme.spacing.lg,
-          marginHorizontal: theme.spacing.lg,
-          marginBottom: theme.spacing.md,
-          borderWidth: 1,
-          borderColor: theme.colors.border.light,
-        }}
-        activeOpacity={0.9}
-      >
-        {/* Header Row */}
-        <View
+      <Animated.View style={{ opacity: itemFade }}>
+        <TouchableOpacity
+          onPress={() => handleViewCandidate(item.user_id)}
           style={{
-            flexDirection: "row",
-            alignItems: "flex-start",
-            marginBottom: theme.spacing.sm,
+            backgroundColor: theme.colors.background.card,
+            borderRadius: theme.borderRadius.xl,
+            padding: theme.spacing.lg,
+            marginHorizontal: theme.spacing.lg,
+            marginBottom: theme.spacing.md,
+            borderWidth: 1,
+            borderColor: theme.colors.border.light,
+            ...theme.shadows.sm,
           }}
+          activeOpacity={0.8}
         >
-          {/* Candidate Avatar */}
-          <View style={{ position: "relative", marginRight: theme.spacing.md }}>
-            {item.profileImage ? (
-              <Image
-                source={{ uri: item.profileImage }}
+          {/* Header Row */}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "flex-start",
+              marginBottom: theme.spacing.md,
+            }}
+          >
+            {/* Candidate Avatar */}
+            <View style={{ position: "relative", marginRight: theme.spacing.md }}>
+              {item.profileImage ? (
+                <Image
+                  source={{ uri: item.profileImage }}
+                  style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: 28,
+                    borderWidth: 2,
+                    borderColor: getStatusColor(),
+                  }}
+                />
+              ) : (
+                <LinearGradient
+                  colors={
+                    item.status === "discovered"
+                      ? [theme.colors.primary.orange, theme.colors.secondary.darkOrange]
+                      : [theme.colors.primary.teal, theme.colors.secondary.darkTeal]
+                  }
+                  style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: 28,
+                    justifyContent: "center",
+                    alignItems: "center",
+                    borderWidth: 2,
+                    borderColor: getStatusColor(),
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: theme.typography.sizes.lg,
+                      fontFamily: theme.typography.fonts.bold,
+                      color: theme.colors.neutral.white,
+                    }}
+                  >
+                    {item.initials}
+                  </Text>
+                </LinearGradient>
+              )}
+
+              {/* Online status */}
+              {item.isAvailable && (
+                <View
+                  style={{
+                    position: "absolute",
+                    bottom: 0,
+                    right: 0,
+                    width: 14,
+                    height: 14,
+                    borderRadius: 7,
+                    backgroundColor: theme.colors.status.success,
+                    borderWidth: 2,
+                    borderColor: theme.colors.background.card,
+                  }}
+                />
+              )}
+            </View>
+
+            {/* Candidate Info */}
+            <View style={{ flex: 1, marginRight: theme.spacing.sm }}>
+              <Text
                 style={{
-                  width: 50,
-                  height: 50,
-                  borderRadius: 25,
-                  borderWidth: 2,
-                  borderColor: getStatusColor(),
+                  fontSize: theme.typography.sizes.md,
+                  fontFamily: theme.typography.fonts.semiBold,
+                  color: theme.colors.text.primary,
+                  marginBottom: theme.spacing.xs,
                 }}
-              />
-            ) : (
+                numberOfLines={1}
+              >
+                {item.name}
+              </Text>
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.regular,
+                  color: theme.colors.text.secondary,
+                  marginBottom: theme.spacing.xs,
+                }}
+                numberOfLines={1}
+              >
+                {item.position}
+                {item.company ? ` • ${item.company}` : ''}
+              </Text>
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: theme.colors.text.tertiary,
+                }}
+              >
+                {item.experience}
+              </Text>
+            </View>
+
+            {/* Status and Match */}
+            <View style={{ alignItems: "flex-end" }}>
               <View
                 style={{
-                  width: 50,
-                  height: 50,
-                  borderRadius: 25,
-                  backgroundColor:
-                    item.status === "discovered"
-                      ? theme.colors.primary.orange
-                      : theme.colors.background.accent,
-                  justifyContent: "center",
+                  flexDirection: "row",
                   alignItems: "center",
-                  borderWidth: 2,
-                  borderColor: getStatusColor(),
+                  backgroundColor: `${getStatusColor()}15`,
+                  borderRadius: theme.borderRadius.md,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xs,
+                  marginBottom: theme.spacing.sm,
+                }}
+              >
+                <Ionicons
+                  name={getStatusIcon()}
+                  size={12}
+                  color={getStatusColor()}
+                  style={{ marginRight: theme.spacing.xs }}
+                />
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.semiBold,
+                    color: getStatusColor(),
+                  }}
+                >
+                  {getStatusText()}
+                </Text>
+              </View>
+
+              <LinearGradient
+                colors={
+                  item.matchPercentage >= 80
+                    ? [theme.colors.status.success, "#0D9488"]
+                    : item.matchPercentage >= 60
+                    ? [theme.colors.primary.teal, theme.colors.secondary.darkTeal]
+                    : [theme.colors.primary.orange, theme.colors.secondary.darkOrange]
+                }
+                style={{
+                  borderRadius: theme.borderRadius.full,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xs,
                 }}
               >
                 <Text
                   style={{
-                    fontSize: theme.typography.sizes.base,
+                    fontSize: theme.typography.sizes.xs,
                     fontFamily: theme.typography.fonts.bold,
-                    color:
-                      item.status === "discovered"
-                        ? theme.colors.neutral.white
-                        : theme.colors.primary.teal,
+                    color: theme.colors.neutral.white,
                   }}
                 >
-                  {item.initials}
+                  {item.matchPercentage}% Match
                 </Text>
-              </View>
-            )}
-
-            {/* Online status */}
-            {item.isAvailable && (
-              <View
-                style={{
-                  position: "absolute",
-                  bottom: 0,
-                  right: 0,
-                  width: 12,
-                  height: 12,
-                  borderRadius: 6,
-                  backgroundColor: theme.colors.status.success,
-                  borderWidth: 2,
-                  borderColor: theme.colors.background.card,
-                }}
-              />
-            )}
+              </LinearGradient>
+            </View>
           </View>
 
-          {/* Candidate Info */}
-          <View style={{ flex: 1, marginRight: theme.spacing.sm }}>
-            <Text
+          {/* Matched Job Title */}
+          {item.matchedJobTitle && (
+            <View
               style={{
-                fontSize: theme.typography.sizes.base,
-                fontFamily: theme.typography.fonts.semiBold,
-                color: theme.colors.text.primary,
-                marginBottom: theme.spacing.xs,
+                backgroundColor: theme.colors.background.accent,
+                borderRadius: theme.borderRadius.md,
+                paddingHorizontal: theme.spacing.md,
+                paddingVertical: theme.spacing.sm,
+                marginBottom: theme.spacing.md,
+                borderLeftWidth: 3,
+                borderLeftColor: theme.colors.primary.teal,
               }}
             >
-              {item.name}
-            </Text>
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
-                marginBottom: theme.spacing.xs,
-              }}
-            >
-              {item.position} • {item.experience}
-            </Text>
-            {item.matchedJobTitle && (
               <Text
                 style={{
                   fontSize: theme.typography.sizes.sm,
                   fontFamily: theme.typography.fonts.medium,
                   color: theme.colors.primary.teal,
-                  marginBottom: theme.spacing.xs,
                 }}
                 numberOfLines={1}
               >
-                Matches: {item.matchedJobTitle}
-              </Text>
-            )}
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.xs,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.tertiary,
-              }}
-            >
-              {item.lastActive}
-            </Text>
-          </View>
-
-          {/* Status and Match */}
-          <View style={{ alignItems: "flex-end" }}>
-            <View
-              style={{
-                backgroundColor: `${getStatusColor()}15`,
-                borderRadius: theme.borderRadius.sm,
-                paddingHorizontal: theme.spacing.xs,
-                paddingVertical: 2,
-                marginBottom: theme.spacing.xs,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.xs,
-                  fontFamily: theme.typography.fonts.medium,
-                  color: getStatusColor(),
-                }}
-              >
-                {getStatusText()}
-              </Text>
-            </View>
-
-            <View
-              style={{
-                backgroundColor: theme.colors.status.success,
-                borderRadius: theme.borderRadius.full,
-                paddingHorizontal: theme.spacing.sm,
-                paddingVertical: theme.spacing.xs,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.xs,
-                  fontFamily: theme.typography.fonts.bold,
-                  color: theme.colors.neutral.white,
-                }}
-              >
-                {item.matchPercentage}% Match
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Details Row */}
-        <View
-          style={{
-            flexDirection: "row",
-            flexWrap: "wrap",
-            marginBottom: theme.spacing.md,
-            gap: theme.spacing.md,
-          }}
-        >
-          {item.location && (
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                minWidth: "45%",
-              }}
-            >
-              <Ionicons
-                name="location-outline"
-                size={14}
-                color={theme.colors.text.tertiary}
-                style={{ marginRight: theme.spacing.xs }}
-              />
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.sm,
-                  fontFamily: theme.typography.fonts.regular,
-                  color: theme.colors.text.secondary,
-                }}
-                numberOfLines={1}
-              >
-                {item.location}
+                <Ionicons name="briefcase" size={14} color={theme.colors.primary.teal} />
+                {' '}Matches: {item.matchedJobTitle}
               </Text>
             </View>
           )}
 
-          {item.salary && (
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                minWidth: "45%",
-              }}
-            >
-              <Ionicons
-                name="cash-outline"
-                size={14}
-                color={theme.colors.text.tertiary}
-                style={{ marginRight: theme.spacing.xs }}
-              />
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.sm,
-                  fontFamily: theme.typography.fonts.regular,
-                  color: theme.colors.text.secondary,
-                }}
-              >
-                {item.salary}
-              </Text>
-            </View>
-          )}
-
-          {item.education && (
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                minWidth: "45%",
-              }}
-            >
-              <Ionicons
-                name="school-outline"
-                size={14}
-                color={theme.colors.text.tertiary}
-                style={{ marginRight: theme.spacing.xs }}
-              />
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.sm,
-                  fontFamily: theme.typography.fonts.regular,
-                  color: theme.colors.text.secondary,
-                }}
-                numberOfLines={1}
-              >
-                {item.education}
-              </Text>
-            </View>
-          )}
-
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              minWidth: "45%",
-            }}
-          >
-            <Ionicons
-              name="time-outline"
-              size={14}
-              color={theme.colors.text.tertiary}
-              style={{ marginRight: theme.spacing.xs }}
-            />
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.secondary,
-              }}
-            >
-              Found {item.discoveredTime}
-            </Text>
-          </View>
-        </View>
-
-        {/* Skills */}
-        {item.skills && item.skills.length > 0 && (
+          {/* Details Grid */}
           <View
             style={{
               flexDirection: "row",
               flexWrap: "wrap",
               marginBottom: theme.spacing.md,
+              gap: theme.spacing.md,
             }}
           >
-            {item.skills.slice(0, 4).map((skill, index) => (
-              <View
-                key={index}
-                style={{
-                  backgroundColor: theme.colors.background.accent,
-                  borderRadius: theme.borderRadius.sm,
-                  paddingHorizontal: theme.spacing.sm,
-                  paddingVertical: theme.spacing.xs,
-                  marginRight: theme.spacing.xs,
-                  marginBottom: theme.spacing.xs,
-                  borderWidth: 1,
-                  borderColor: theme.colors.primary.teal,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: theme.typography.sizes.xs,
-                    fontFamily: theme.typography.fonts.medium,
-                    color: theme.colors.primary.teal,
-                  }}
-                >
-                  {skill}
-                </Text>
-              </View>
-            ))}
-            {item.skills.length > 4 && (
+            {item.location && (
               <View
                 style={{
-                  backgroundColor: theme.colors.neutral.lightGray,
-                  borderRadius: theme.borderRadius.sm,
-                  paddingHorizontal: theme.spacing.sm,
-                  paddingVertical: theme.spacing.xs,
-                  marginRight: theme.spacing.xs,
-                  marginBottom: theme.spacing.xs,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  minWidth: "45%",
                 }}
               >
+                <Ionicons
+                  name="location"
+                  size={14}
+                  color={theme.colors.text.tertiary}
+                  style={{ marginRight: theme.spacing.xs }}
+                />
                 <Text
                   style={{
-                    fontSize: theme.typography.sizes.xs,
-                    fontFamily: theme.typography.fonts.medium,
-                    color: theme.colors.text.tertiary,
+                    fontSize: theme.typography.sizes.sm,
+                    fontFamily: theme.typography.fonts.regular,
+                    color: theme.colors.text.secondary,
+                    flex: 1,
                   }}
+                  numberOfLines={1}
                 >
-                  +{item.skills.length - 4}
+                  {item.location}
                 </Text>
               </View>
             )}
-          </View>
-        )}
 
-        {/* Action based on status */}
-        {item.status === "discovered" && (
-          <TouchableOpacity
-            onPress={() => handleSendProposal(item.user_id)}
-            style={{
-              backgroundColor: theme.colors.primary.teal,
-              borderRadius: theme.borderRadius.md,
-              paddingVertical: theme.spacing.sm,
-              alignItems: "center",
-              flexDirection: "row",
-              justifyContent: "center",
-            }}
-            activeOpacity={0.8}
-          >
-            <Ionicons
-              name="paper-plane-outline"
-              size={16}
-              color={theme.colors.neutral.white}
-              style={{ marginRight: theme.spacing.xs }}
-            />
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.semiBold,
-                color: theme.colors.neutral.white,
-              }}
-            >
-              Send Job Proposal
-            </Text>
-          </TouchableOpacity>
-        )}
+            {item.salary && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  minWidth: "45%",
+                }}
+              >
+                <Ionicons
+                  name="cash"
+                  size={14}
+                  color={theme.colors.text.tertiary}
+                  style={{ marginRight: theme.spacing.xs }}
+                />
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.sm,
+                    fontFamily: theme.typography.fonts.regular,
+                    color: theme.colors.text.secondary,
+                  }}
+                  numberOfLines={1}
+                >
+                  {item.salary}
+                </Text>
+              </View>
+            )}
 
-        {item.status === "proposal_sent" && (
-          <View
-            style={{
-              backgroundColor: theme.colors.background.accent,
-              borderRadius: theme.borderRadius.md,
-              paddingVertical: theme.spacing.sm,
-              alignItems: "center",
-              flexDirection: "row",
-              justifyContent: "center",
-            }}
-          >
-            <Ionicons
-              name="hourglass-outline"
-              size={16}
-              color={theme.colors.primary.deepBlue}
-              style={{ marginRight: theme.spacing.xs }}
-            />
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.medium,
-                color: theme.colors.primary.deepBlue,
-              }}
-            >
-              Proposal Sent {item.proposalSentTime}
-            </Text>
-          </View>
-        )}
+            {item.education && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  minWidth: "45%",
+                }}
+              >
+                <Ionicons
+                  name="school"
+                  size={14}
+                  color={theme.colors.text.tertiary}
+                  style={{ marginRight: theme.spacing.xs }}
+                />
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.sm,
+                    fontFamily: theme.typography.fonts.regular,
+                    color: theme.colors.text.secondary,
+                    flex: 1,
+                  }}
+                  numberOfLines={1}
+                >
+                  {item.education}
+                </Text>
+              </View>
+            )}
 
-        {item.status === "accepted" && (
-          <TouchableOpacity
-            onPress={() => handleStartConversation(item.id)}
-            style={{
-              backgroundColor: theme.colors.status.success,
-              borderRadius: theme.borderRadius.md,
-              paddingVertical: theme.spacing.sm,
-              alignItems: "center",
-              flexDirection: "row",
-              justifyContent: "center",
-            }}
-            activeOpacity={0.8}
-          >
-            <Ionicons
-              name="chatbubble-outline"
-              size={16}
-              color={theme.colors.neutral.white}
-              style={{ marginRight: theme.spacing.xs }}
-            />
-            <Text
-              style={{
-                fontSize: theme.typography.sizes.sm,
-                fontFamily: theme.typography.fonts.semiBold,
-                color: theme.colors.neutral.white,
-              }}
-            >
-              Start Conversation
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Profile Completion Bar */}
-        {item.profileCompletion > 0 && (
-          <View style={{ marginTop: theme.spacing.md }}>
             <View
               style={{
                 flexDirection: "row",
                 alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: theme.spacing.xs,
+                minWidth: "45%",
               }}
             >
+              <Ionicons
+                name="time"
+                size={14}
+                color={theme.colors.text.tertiary}
+                style={{ marginRight: theme.spacing.xs }}
+              />
               <Text
                 style={{
-                  fontSize: theme.typography.sizes.xs,
-                  fontFamily: theme.typography.fonts.medium,
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.regular,
                   color: theme.colors.text.secondary,
                 }}
               >
-                Profile Completion
+                {item.lastActive}
               </Text>
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.xs,
-                  fontFamily: theme.typography.fonts.semiBold,
-                  color: theme.colors.primary.teal,
-                }}
-              >
-                {item.profileCompletion}%
-              </Text>
-            </View>
-            <View
-              style={{
-                height: 4,
-                backgroundColor: theme.colors.neutral.lightGray,
-                borderRadius: 2,
-                overflow: "hidden",
-              }}
-            >
-              <View
-                style={{
-                  width: `${item.profileCompletion}%`,
-                  height: "100%",
-                  backgroundColor: theme.colors.primary.teal,
-                }}
-              />
             </View>
           </View>
-        )}
-      </TouchableOpacity>
+
+          {/* Skills */}
+          {item.skills && item.skills.length > 0 && (
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                marginBottom: theme.spacing.md,
+                gap: theme.spacing.xs,
+              }}
+            >
+              {item.skills.slice(0, 5).map((skill, skillIndex) => (
+                <View
+                  key={`skill_${item.id}_${skillIndex}_${skill}`}
+                  style={{
+                    backgroundColor: theme.colors.background.accent,
+                    borderRadius: theme.borderRadius.sm,
+                    paddingHorizontal: theme.spacing.sm,
+                    paddingVertical: theme.spacing.xs,
+                    borderWidth: 1,
+                    borderColor: theme.colors.primary.teal,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: theme.typography.sizes.xs,
+                      fontFamily: theme.typography.fonts.medium,
+                      color: theme.colors.primary.teal,
+                    }}
+                  >
+                    {skill}
+                  </Text>
+                </View>
+              ))}
+              {item.skills.length > 5 && (
+                <View
+                  style={{
+                    backgroundColor: theme.colors.neutral.lightGray,
+                    borderRadius: theme.borderRadius.sm,
+                    paddingHorizontal: theme.spacing.sm,
+                    paddingVertical: theme.spacing.xs,
+                    borderWidth: 1,
+                    borderColor: theme.colors.border.light,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: theme.typography.sizes.xs,
+                      fontFamily: theme.typography.fonts.semiBold,
+                      color: theme.colors.text.tertiary,
+                    }}
+                  >
+                    +{item.skills.length - 5}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Action Buttons based on status */}
+          {item.status === "discovered" && (
+            <TouchableOpacity
+              onPress={() => handleSendProposal(item.user_id)}
+              style={{
+                backgroundColor: theme.colors.primary.teal,
+                borderRadius: theme.borderRadius.lg,
+                paddingVertical: theme.spacing.md,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                ...theme.shadows.sm,
+              }}
+              activeOpacity={0.8}
+            >
+              {console.log("🚀 Sending proposal to candidate:", item.status)}
+              <Ionicons
+                name="paper-plane"
+                size={16}
+                color={theme.colors.neutral.white}
+                style={{ marginRight: theme.spacing.sm }}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.base,
+                  fontFamily: theme.typography.fonts.semiBold,
+                  color: theme.colors.neutral.white,
+                }}
+              >
+                Send Job Proposal
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {item.status === "submitted" && (
+            <View
+              style={{
+                backgroundColor: theme.colors.background.accent,
+                borderRadius: theme.borderRadius.lg,
+                paddingVertical: theme.spacing.md,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                borderWidth: 1,
+                borderColor: theme.colors.primary.deepBlue,
+              }}
+            >
+              <Ionicons
+                name="hourglass-outline"
+                size={16}
+                color={theme.colors.primary.deepBlue}
+                style={{ marginRight: theme.spacing.sm }}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.base,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: theme.colors.primary.deepBlue,
+                }}
+              >
+                Proposal Sent {item.proposalSentTime ? `• ${item.proposalSentTime}` : ''}
+              </Text>
+            </View>
+          )}
+
+          {item.status === "accepted" && (
+            <TouchableOpacity
+              onPress={() => handleStartConversation(item)}
+              style={{
+                backgroundColor: theme.colors.status.success,
+                borderRadius: theme.borderRadius.lg,
+                paddingVertical: theme.spacing.md,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                ...theme.shadows.sm,
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="chatbubble-ellipses"
+                size={16}
+                color={theme.colors.neutral.white}
+                style={{ marginRight: theme.spacing.sm }}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.base,
+                  fontFamily: theme.typography.fonts.semiBold,
+                  color: theme.colors.neutral.white,
+                }}
+              >
+                Start Conversation
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Profile Completion Bar */}
+          {item.profileCompletion > 0 && (
+            <View style={{ marginTop: theme.spacing.md }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: theme.spacing.xs,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.medium,
+                    color: theme.colors.text.secondary,
+                  }}
+                >
+                  Profile Completion
+                </Text>
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.semiBold,
+                    color:
+                      item.profileCompletion >= 80
+                        ? theme.colors.status.success
+                        : item.profileCompletion >= 50
+                        ? theme.colors.primary.orange
+                        : theme.colors.status.error,
+                  }}
+                >
+                  {item.profileCompletion}%
+                </Text>
+              </View>
+              <View
+                style={{
+                  height: 6,
+                  backgroundColor: theme.colors.neutral.lightGray,
+                  borderRadius: 3,
+                  overflow: "hidden",
+                }}
+              >
+                <LinearGradient
+                  colors={
+                    item.profileCompletion >= 80
+                      ? [theme.colors.status.success, "#0D9488"]
+                      : item.profileCompletion >= 50
+                      ? [theme.colors.primary.orange, theme.colors.secondary.darkOrange]
+                      : [theme.colors.status.error, "#DC2626"]
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{
+                    width: `${item.profileCompletion}%`,
+                    height: "100%",
+                  }}
+                />
+              </View>
+            </View>
+          )}
+        </TouchableOpacity>
+      </Animated.View>
     );
   };
 
@@ -934,7 +1080,7 @@ export default function EmployerCandidates() {
       <ActivityIndicator size="large" color={theme.colors.primary.teal} />
       <Text
         style={{
-          marginTop: theme.spacing.md,
+          marginTop: theme.spacing.lg,
           fontSize: theme.typography.sizes.base,
           fontFamily: theme.typography.fonts.medium,
           color: theme.colors.text.secondary,
@@ -956,38 +1102,38 @@ export default function EmployerCandidates() {
         paddingVertical: theme.spacing.xxxl,
       }}
     >
-      <View
+      <LinearGradient
+        colors={[theme.colors.background.accent, theme.colors.background.primary]}
         style={{
-          width: 80,
-          height: 80,
-          borderRadius: 40,
-          backgroundColor: theme.colors.background.accent,
+          width: 100,
+          height: 100,
+          borderRadius: 50,
           justifyContent: "center",
           alignItems: "center",
-          marginBottom: theme.spacing.lg,
+          marginBottom: theme.spacing.xl,
         }}
       >
         <Ionicons
           name={
             searchQuery
-              ? "search-outline"
+              ? "search"
               : activeFilter === "discovered"
-              ? "person-add-outline"
-              : activeFilter === "proposal_sent"
-              ? "paper-plane-outline"
+              ? "star"
+              : activeFilter === "submitted"
+              ? "paper-plane"
               : activeFilter === "accepted"
-              ? "checkmark-circle-outline"
-              : "people-outline"
+              ? "checkmark-circle"
+              : "people"
           }
-          size={32}
+          size={40}
           color={theme.colors.primary.teal}
         />
-      </View>
+      </LinearGradient>
 
       <Text
         style={{
-          fontSize: theme.typography.sizes.lg,
-          fontFamily: theme.typography.fonts.semiBold,
+          fontSize: theme.typography.sizes.xl,
+          fontFamily: theme.typography.fonts.bold,
           color: theme.colors.text.primary,
           marginBottom: theme.spacing.sm,
           textAlign: "center",
@@ -997,7 +1143,7 @@ export default function EmployerCandidates() {
           ? "No candidates found"
           : activeFilter === "discovered"
           ? "No new discoveries"
-          : activeFilter === "proposal_sent"
+          : activeFilter === "submitted"
           ? "No proposals sent"
           : activeFilter === "accepted"
           ? "No accepted proposals"
@@ -1010,15 +1156,16 @@ export default function EmployerCandidates() {
           fontFamily: theme.typography.fonts.regular,
           color: theme.colors.text.secondary,
           textAlign: "center",
-          lineHeight: theme.typography.sizes.base * 1.4,
-          marginBottom: theme.spacing.lg,
+          lineHeight: theme.typography.sizes.base * 1.5,
+          marginBottom: theme.spacing.xl,
+          paddingHorizontal: theme.spacing.md,
         }}
       >
         {searchQuery
           ? "Try adjusting your search terms or filters"
           : activeFilter === "discovered"
           ? "New candidate matches will appear here as they become available"
-          : activeFilter === "proposal_sent"
+          : activeFilter === "submitted"
           ? "Candidates you send proposals to will appear here"
           : activeFilter === "accepted"
           ? "Candidates who accept your proposals will appear here"
@@ -1031,11 +1178,20 @@ export default function EmployerCandidates() {
           style={{
             backgroundColor: theme.colors.primary.teal,
             borderRadius: theme.borderRadius.lg,
-            paddingHorizontal: theme.spacing.xl,
+            paddingHorizontal: theme.spacing.xxl,
             paddingVertical: theme.spacing.md,
+            flexDirection: "row",
+            alignItems: "center",
+            ...theme.shadows.md,
           }}
           activeOpacity={0.8}
         >
+          <Ionicons
+            name="add-circle"
+            size={20}
+            color={theme.colors.neutral.white}
+            style={{ marginRight: theme.spacing.sm }}
+          />
           <Text
             style={{
               fontSize: theme.typography.sizes.base,
@@ -1049,12 +1205,13 @@ export default function EmployerCandidates() {
       )}
     </View>
   );
+
   // Footer Loading Indicator
   const FooterLoadingIndicator = () => {
     if (!isLoadingMore) return null;
 
     return (
-      <View style={{ paddingVertical: theme.spacing.lg, alignItems: "center" }}>
+      <View style={{ paddingVertical: theme.spacing.xl, alignItems: "center" }}>
         <ActivityIndicator size="small" color={theme.colors.primary.teal} />
         <Text
           style={{
@@ -1069,13 +1226,14 @@ export default function EmployerCandidates() {
       </View>
     );
   };
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background.primary }}>
       {/* Background Gradient */}
       <LinearGradient
         colors={[
           theme.colors.background.accent,
-          "rgba(27, 163, 163, 0.02)",
+          "rgba(27, 163, 163, 0.05)",
           theme.colors.background.primary,
         ]}
         style={{
@@ -1087,32 +1245,39 @@ export default function EmployerCandidates() {
         }}
         locations={[0, 0.3, 1]}
       />
-      <Header />
 
-      {isLoading ? (
-        <LoadingState />
-      ) : candidates.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <FlatList
-          data={candidates}
-          renderItem={({ item }) => <CandidateItem item={item} />}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingVertical: theme.spacing.md }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[theme.colors.primary.teal]}
-              tintColor={theme.colors.primary.teal}
-            />
-          }
-          onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={FooterLoadingIndicator}
-        />
-      )}
+      <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+        <Header />
+
+        {isLoading ? (
+          <LoadingState />
+        ) : candidates.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <FlatList
+            data={candidates}
+            renderItem={({ item, index }) => <CandidateItem item={item} index={index} />}
+            keyExtractor={(item) => item.id}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingVertical: theme.spacing.md }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[theme.colors.primary.teal]}
+                tintColor={theme.colors.primary.teal}
+              />
+            }
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={FooterLoadingIndicator}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            windowSize={10}
+            initialNumToRender={5}
+          />
+        )}
+      </Animated.View>
     </View>
   );
 }

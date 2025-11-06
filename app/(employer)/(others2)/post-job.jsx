@@ -1,16 +1,18 @@
-import CustomDropdown from '@/components/CustomDropdown';
-import CustomInput from '@/components/CustomInput';
-import SafeAreaWrapper from '@/components/SafeAreaWrapper';
-import SkillsInput from '@/components/SkillsInput';
-import apiService from '@/services/apiService';
-import theme from '@/theme';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
-import React, { useEffect, useState } from 'react';
+import CustomDatePicker from "@/components/CustomDatePicker";
+import CustomDropdown from "@/components/CustomDropdown";
+import CustomInput from "@/components/CustomInput";
+import SafeAreaWrapper from "@/components/SafeAreaWrapper";
+import SkillsInput3 from "@/components/SkillsInput3";
+import apiService from "@/services/apiService";
+import theme from "@/theme";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   KeyboardAvoidingView,
   Modal,
@@ -20,32 +22,32 @@ import {
   Text,
   TouchableOpacity,
   View,
-} from 'react-native';
+} from "react-native";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
 export default function CreateJob() {
   const [formData, setFormData] = useState({
-    jobTitle: '',
-    department: '',
-    locationCity: '',
-    locationState: '',
-    employmentType: '',
-    workMode: '',
-    experienceMin: '0',
-    experienceMax: '',
-    salaryMin: '',
-    salaryMax: '',
-    salaryType: 'annual',
-    jobDescription: '',
-    jobResponsibilities: '',
-    jobRequirements: '',
-    benefits: '',
-    educationRequirement: '',
-    positionsAvailable: '1',
-    priorityLevel: 'medium',
-    applicationDeadline: '',
-    jobCategory: '',
+    jobTitle: "",
+    department: "",
+    locationCity: "",
+    locationState: "",
+    employmentType: "",
+    workMode: "",
+    experienceMin: "0",
+    experienceMax: "",
+    salaryMin: "",
+    salaryMax: "",
+    salaryType: "",
+    jobDescription: "",
+    jobResponsibilities: "",
+    jobRequirements: "",
+    benefits: "",
+    educationRequirement: "",
+    positionsAvailable: "1",
+    priorityLevel: "medium",
+    applicationDeadline: "",
+    jobCategory: "",
   });
 
   const [skills, setSkills] = useState([]);
@@ -56,6 +58,9 @@ export default function CreateJob() {
   const [postError, setPostError] = useState("");
   const [companyId, setCompanyId] = useState(null);
   const [userId, setUserId] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [accountStatus, setAccountStatus] = useState("active");
 
   // Dropdown options matching database schema
   const employmentTypeOptions = [
@@ -80,10 +85,10 @@ export default function CreateJob() {
   ];
 
   const priorityLevelOptions = [
-    { label: 'Low Priority', value: 'low' },
-    { label: 'Medium Priority', value: 'medium' },
-    { label: 'High Priority', value: 'high' },
-    { label: 'Urgent', value: 'urgent' },
+    { label: "Low Priority", value: "low" },
+    { label: "Medium Priority", value: "medium" },
+    { label: "High Priority", value: "high" },
+    { label: "Urgent", value: "urgent" },
   ];
 
   const jobCategoryOptions = [
@@ -100,31 +105,68 @@ export default function CreateJob() {
     { label: "Other", value: "Other" },
   ];
 
-  // Load skills, user_id, and company_id on mount
-  useEffect(() => {
-    loadSkills();
-    loadUserData();
-  }, []);
-
   const loadSkills = async () => {
     try {
       const response = await apiService.getSkills();
       if (response.success) {
-        setAvailableSkills(response.data.map(skill => ({
-          label: skill.skill_name,
-          value: skill.skill_id,
-          category: skill.skill_category
-        })));
+        const formattedSkills = response.data.map((skill) => ({
+          skill_name: skill.skill_name,
+          skill_id: skill.skill_id,
+          skill_category: skill.skill_category,
+        }));
+        console.log("✅ Loaded skills:", formattedSkills.length, "skills");
+        console.log("📋 Sample skills:", formattedSkills.slice(0, 3));
+        setAvailableSkills(formattedSkills);
+      } else {
+        console.log("❌ Failed to load skills:", response.message);
       }
     } catch (error) {
-      console.log('Error loading skills:', error);
+      console.log("❌ Error loading skills:", error);
     }
   };
 
-  const loadUserData = async () => {
+  // Fetch company profile from API
+  const fetchCompanyProfile = useCallback(async (uid, cid) => {
     try {
-      const storedUserId = await SecureStore.getItemAsync('user_id');
-      const storedCompanyId = await SecureStore.getItemAsync('company_id');
+      setLoading(true);
+
+      const response = await apiService.getCompanyProfile(uid, cid);
+
+      if (response.success && response.data) {
+        const data = response.data;
+
+        console.log("✅ Company profile loaded:", data);
+
+        // ✅ NEW: Set pending approvals data
+        if (data.pending_approvals) {
+          setPendingApprovals(data.pending_approvals);
+        }
+
+        // ✅ Check account status
+        if (data.account_status) {
+          setAccountStatus(data.account_status);
+          console.log("📊 Account status:", data.account_status);
+        }
+
+        setLoading(false);
+      } else {
+        Alert.alert(
+          "Error",
+          response.message || "Failed to load company profile"
+        );
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error("Error fetching company profile:", error);
+      Alert.alert("Error", "Failed to load company profile");
+      setLoading(false);
+    }
+  }, []);
+
+  const loadUserData = useCallback(async () => {
+    try {
+      const storedUserId = await SecureStore.getItemAsync("user_id");
+      const storedCompanyId = await SecureStore.getItemAsync("company_id");
 
       // console.log('📋 Loaded from SecureStore:', {
       //   userId: storedUserId,
@@ -134,24 +176,34 @@ export default function CreateJob() {
       if (storedUserId) {
         setUserId(parseInt(storedUserId));
       } else {
-        setPostError('User ID not found. Please login again.');
+        setPostError("User ID not found. Please login again.");
       }
 
       if (storedCompanyId) {
         setCompanyId(parseInt(storedCompanyId));
       } else {
-        setPostError('Company ID not found. Please login again.');
+        setPostError("Company ID not found. Please login again.");
+      }
+      // Fetch company profile after loading IDs
+      if (storedUserId && storedCompanyId) {
+        fetchCompanyProfile(parseInt(storedUserId), parseInt(storedCompanyId));
       }
     } catch (error) {
-      console.error('Error loading user data:', error);
-      setPostError('Error loading user information.');
+      console.error("Error loading user data:", error);
+      setPostError("Error loading user information.");
     }
-  };
+  }, [fetchCompanyProfile]);
+
+  // Load skills, user_id, and company_id on mount
+  useEffect(() => {
+    loadSkills();
+    loadUserData();
+  }, [loadUserData]);
 
   const updateFormData = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+      setErrors((prev) => ({ ...prev, [field]: "" }));
     }
     if (postError) {
       setPostError("");
@@ -161,7 +213,7 @@ export default function CreateJob() {
   const handleSkillsChange = (newSkills) => {
     setSkills(newSkills);
     if (errors.skills) {
-      setErrors(prev => ({ ...prev, skills: null }));
+      setErrors((prev) => ({ ...prev, skills: null }));
     }
   };
 
@@ -169,25 +221,44 @@ export default function CreateJob() {
     const newErrors = {};
 
     // Required fields validation
-    if (!formData.jobTitle.trim()) newErrors.jobTitle = 'Job title is required';
-    if (!formData.locationCity.trim()) newErrors.locationCity = 'City is required';
-    if (!formData.employmentType) newErrors.employmentType = 'Employment type is required';
-    if (!formData.workMode) newErrors.workMode = 'Work mode is required';
-    if (!formData.jobDescription.trim()) newErrors.jobDescription = 'Job description is required';
-    if (!formData.jobResponsibilities.trim()) newErrors.jobResponsibilities = 'Responsibilities are required';
-    if (!formData.jobRequirements.trim()) newErrors.jobRequirements = 'Requirements are required';
+    if (!formData.jobTitle.trim()) newErrors.jobTitle = "Job title is required";
+    if (!formData.department.trim())
+      newErrors.department = "Department is required"; // ✅ Added
+    if (!formData.jobCategory)
+      newErrors.jobCategory = "Job category is required"; // ✅ Added
+
+    if (!formData.locationCity.trim())
+      newErrors.locationCity = "City is required";
+    if (!formData.locationState.trim())
+      newErrors.locationState = "State is required";
+    if (!formData.employmentType)
+      newErrors.employmentType = "Employment type is required";
+    if (!formData.workMode) newErrors.workMode = "Work mode is required";
+    if (!formData.jobDescription.trim())
+      newErrors.jobDescription = "Job description is required";
+    if (!formData.jobResponsibilities.trim())
+      newErrors.jobResponsibilities = "Responsibilities are required";
+    if (!formData.jobRequirements.trim())
+      newErrors.jobRequirements = "Requirements are required";
 
     if (skills.length === 0) {
-      newErrors.skills = 'At least one skill is required';
+      newErrors.skills = "At least one skill is required";
     }
-
+    if (!formData.applicationDeadline) {
+      newErrors.applicationDeadline = "Application deadline is required";
+    } else {
+      const today = new Date().toISOString().split("T")[0];
+      if (formData.applicationDeadline < today) {
+        newErrors.applicationDeadline = "Deadline cannot be in the past";
+      }
+    }
     // Salary validation
     if (formData.salaryMin && formData.salaryMax) {
       const minSalary = parseFloat(formData.salaryMin);
       const maxSalary = parseFloat(formData.salaryMax);
 
       if (minSalary >= maxSalary) {
-        newErrors.salaryMax = 'Maximum salary should be higher than minimum';
+        newErrors.salaryMax = "Maximum salary should be higher than minimum";
       }
     }
 
@@ -197,13 +268,17 @@ export default function CreateJob() {
       const maxExp = parseInt(formData.experienceMax);
 
       if (minExp > maxExp) {
-        newErrors.experienceMax = 'Maximum experience should be higher than minimum';
+        newErrors.experienceMax =
+          "Maximum experience should be higher than minimum";
       }
     }
 
     // Positions validation
-    if (formData.positionsAvailable && parseInt(formData.positionsAvailable) < 1) {
-      newErrors.positionsAvailable = 'At least 1 position is required';
+    if (
+      formData.positionsAvailable &&
+      parseInt(formData.positionsAvailable) < 1
+    ) {
+      newErrors.positionsAvailable = "At least 1 position is required";
     }
 
     setErrors(newErrors);
@@ -212,19 +287,19 @@ export default function CreateJob() {
 
   const handleSubmit = async (isDraft = false) => {
     if (!isDraft && !validateForm()) {
-      console.log('❌ Form validation failed');
+      console.log("❌ Form validation failed");
       return;
     }
 
     if (!userId) {
-      console.log('❌ User ID not found');
-      setPostError('User ID not found. Please login again.');
+      console.log("❌ User ID not found");
+      setPostError("User ID not found. Please login again.");
       return;
     }
 
     if (!companyId) {
-      console.log('❌ Company ID not found');
-      setPostError('Company ID not found. Please login again.');
+      console.log("❌ Company ID not found");
+      setPostError("Company ID not found. Please login again.");
       return;
     }
 
@@ -245,7 +320,9 @@ export default function CreateJob() {
         employmentType: formData.employmentType,
         workMode: formData.workMode,
         experienceMin: parseInt(formData.experienceMin) || 0,
-        experienceMax: formData.experienceMax ? parseInt(formData.experienceMax) : null,
+        experienceMax: formData.experienceMax
+          ? parseInt(formData.experienceMax)
+          : null,
         salaryMin: formData.salaryMin ? parseFloat(formData.salaryMin) : null,
         salaryMax: formData.salaryMax ? parseFloat(formData.salaryMax) : null,
         salaryType: formData.salaryType,
@@ -258,54 +335,64 @@ export default function CreateJob() {
         priorityLevel: formData.priorityLevel,
         applicationDeadline: formData.applicationDeadline || null,
         jobCategory: formData.jobCategory,
-        skills: skills.map(skill => ({
-          skill_id: skill.skill_id || skill.value, // Support both formats
+        skills: skills.map((skill) => ({
+          skill_id: skill.skill_id || skill.value || null, // null for custom skills
+          skill_name: skill.skill_name || skill.label || null, // Include skill_name
           is_required: 1,
-          proficiency_required: skill.proficiency_level || 'intermediate',
-          priority: 'must_have'
+          proficiency_required: skill.proficiency_level || "intermediate",
+          priority: "must_have",
         })),
-        jobStatus: isDraft ? 'draft' : 'active',
+        jobStatus: isDraft ? "draft" : "active",
       };
 
-      console.log('📤 Posting job with data:', {
+      console.log("📤 Posting job with data:", {
         userId,
         companyId,
         jobTitle: jobData.jobTitle,
         skillsCount: skills.length,
-        isDraft
+        isDraft,
+        skills: jobData.skills, // Log the actual skills array being sent
       });
 
       const response = await apiService.postJob(jobData);
 
-      console.log('📥 API Response:', response);
+      console.log("📥 API Response:", response);
 
       if (response.success) {
-        console.log('✅ Job posted successfully!', response.data);
+        console.log("✅ Job posted successfully!", response.data);
         setShowSuccessModal(true);
       } else {
         // Display detailed error messages from the API
-        let errorMessage = '';
+        let errorMessage = "";
 
-        if (response.errors && Array.isArray(response.errors) && response.errors.length > 0) {
+        if (
+          response.errors &&
+          Array.isArray(response.errors) &&
+          response.errors.length > 0
+        ) {
           // Show all validation errors
-          errorMessage = response.errors.join('\n• ');
-          errorMessage = '• ' + errorMessage;
-          console.log('❌ Validation errors:', response.errors);
+          errorMessage = response.errors.join("\n• ");
+          errorMessage = "• " + errorMessage;
+          console.log("❌ Validation errors:", response.errors);
         } else if (response.message) {
           // Show general error message
           errorMessage = response.message;
         } else {
           // Fallback error message
-          errorMessage = isDraft ? 'Failed to save draft' : 'Failed to publish job';
+          errorMessage = isDraft
+            ? "Failed to save draft"
+            : "Failed to publish job";
         }
 
-        console.log('❌ Job post failed:', errorMessage);
+        console.log("❌ Job post failed:", errorMessage);
         setPostError(errorMessage);
       }
     } catch (error) {
-      console.error('❌ Post job exception:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
-      setPostError('Network error. Please check your internet connection and try again.');
+      console.error("❌ Post job exception:", error);
+      console.error("Error details:", JSON.stringify(error, null, 2));
+      setPostError(
+        "Network error. Please check your internet connection and try again."
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -321,42 +408,47 @@ export default function CreateJob() {
 
   const handleSuccessClose = () => {
     setShowSuccessModal(false);
-    router.replace('/employer/jobs');
+    router.replace("/employer/jobs");
   };
 
   // Generate sample job data for testing
   const generateSampleJob = () => {
     setFormData({
-      jobTitle: 'Senior React Native Developer',
-      department: 'Engineering',
-      locationCity: 'Mumbai',
-      locationState: 'Maharashtra',
-      employmentType: 'full_time',
-      workMode: 'hybrid',
-      experienceMin: '3',
-      experienceMax: '5',
-      salaryMin: '1200000',
-      salaryMax: '1800000',
-      salaryType: 'annual',
-      jobDescription: 'We are looking for an experienced React Native developer to join our dynamic team. You will be responsible for developing high-quality mobile applications for both iOS and Android platforms. This role requires strong problem-solving skills and the ability to work in a fast-paced environment.',
-      jobResponsibilities: '• Design and build advanced applications for iOS and Android\n• Collaborate with cross-functional teams to define and ship new features\n• Work on bug fixing and improving application performance\n• Continuously discover and implement new technologies\n• Maintain code quality and organization',
-      jobRequirements: '• 3+ years of React Native development experience\n• Strong proficiency in JavaScript and TypeScript\n• Experience with Redux or similar state management\n• Knowledge of RESTful APIs and third-party libraries\n• Understanding of mobile app architecture and design patterns',
-      benefits: '• Competitive salary package\n• Health insurance for employee and family\n• Flexible working hours\n• Work from home options\n• Professional development budget\n• Annual performance bonuses',
-      educationRequirement: "Bachelor's degree in Computer Science or related field",
-      positionsAvailable: '2',
-      priorityLevel: 'high',
-      applicationDeadline: '2025-12-31',
-      jobCategory: 'Software Development',
+      jobTitle: "Senior React Native Developer",
+      department: "Engineering",
+      locationCity: "Mumbai",
+      locationState: "Maharashtra",
+      employmentType: "full_time",
+      workMode: "hybrid",
+      experienceMin: "3",
+      experienceMax: "5",
+      salaryMin: "1200000",
+      salaryMax: "1800000",
+      salaryType: "annual",
+      jobDescription:
+        "We are looking for an experienced React Native developer to join our dynamic team. You will be responsible for developing high-quality mobile applications for both iOS and Android platforms. This role requires strong problem-solving skills and the ability to work in a fast-paced environment.",
+      jobResponsibilities:
+        "• Design and build advanced applications for iOS and Android\n• Collaborate with cross-functional teams to define and ship new features\n• Work on bug fixing and improving application performance\n• Continuously discover and implement new technologies\n• Maintain code quality and organization",
+      jobRequirements:
+        "• 3+ years of React Native development experience\n• Strong proficiency in JavaScript and TypeScript\n• Experience with Redux or similar state management\n• Knowledge of RESTful APIs and third-party libraries\n• Understanding of mobile app architecture and design patterns",
+      benefits:
+        "• Competitive salary package\n• Health insurance for employee and family\n• Flexible working hours\n• Work from home options\n• Professional development budget\n• Annual performance bonuses",
+      educationRequirement:
+        "Bachelor's degree in Computer Science or related field",
+      positionsAvailable: "2",
+      priorityLevel: "high",
+      applicationDeadline: "2025-12-31",
+      jobCategory: "Software Development",
     });
 
     // Set sample skills (React Native, JavaScript, TypeScript)
-    // Using skill_name format that SkillsInput expects
+    // Using skill_name format that SkillsInput3 expects
     setSkills([
-      { skill_name: 'React Native', skill_id: 8 },
-      { skill_name: 'JavaScript', skill_id: 1 },
-      { skill_name: 'TypeScript', skill_id: 18 },
-      { skill_name: 'Redux', skill_id: 19 },
-      { skill_name: 'Node.js', skill_id: 4 },
+      { skill_name: "React Native", skill_id: 8 },
+      { skill_name: "JavaScript", skill_id: 1 },
+      { skill_name: "TypeScript", skill_id: 18 },
+      { skill_name: "Redux", skill_id: 19 },
+      { skill_name: "Node.js", skill_id: 4 },
     ]);
 
     if (postError) {
@@ -368,9 +460,9 @@ export default function CreateJob() {
   const Header = () => (
     <View
       style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
         paddingHorizontal: theme.spacing.lg,
         paddingVertical: theme.spacing.md,
         backgroundColor: theme.colors.background.card,
@@ -394,7 +486,7 @@ export default function CreateJob() {
         />
       </TouchableOpacity>
 
-      <View style={{ flex: 1, alignItems: 'center' }}>
+      <View style={{ flex: 1, alignItems: "center" }}>
         <Text
           style={{
             fontSize: theme.typography.sizes.md,
@@ -419,7 +511,7 @@ export default function CreateJob() {
               fontSize: theme.typography.sizes.xs,
               fontFamily: theme.typography.fonts.regular,
               color: theme.colors.status.warning,
-              textDecorationLine: 'underline',
+              textDecorationLine: "underline",
             }}
           >
             🧪 Generate Sample
@@ -458,9 +550,9 @@ export default function CreateJob() {
       <View
         style={{
           flex: 1,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          justifyContent: 'center',
-          alignItems: 'center',
+          backgroundColor: "rgba(0, 0, 0, 0.5)",
+          justifyContent: "center",
+          alignItems: "center",
           paddingHorizontal: theme.spacing.lg,
         }}
       >
@@ -468,10 +560,10 @@ export default function CreateJob() {
           style={{
             backgroundColor: theme.colors.background.card,
             borderRadius: theme.borderRadius.xl,
-            width: '100%',
+            width: "100%",
             maxWidth: 400,
             padding: theme.spacing.xl,
-            alignItems: 'center',
+            alignItems: "center",
           }}
         >
           <View
@@ -480,8 +572,8 @@ export default function CreateJob() {
               height: 80,
               borderRadius: 40,
               backgroundColor: theme.colors.status.success,
-              justifyContent: 'center',
-              alignItems: 'center',
+              justifyContent: "center",
+              alignItems: "center",
               marginBottom: theme.spacing.lg,
             }}
           >
@@ -498,7 +590,7 @@ export default function CreateJob() {
               fontFamily: theme.typography.fonts.bold,
               color: theme.colors.text.primary,
               marginBottom: theme.spacing.sm,
-              textAlign: 'center',
+              textAlign: "center",
             }}
           >
             Job Posted Successfully!
@@ -509,7 +601,7 @@ export default function CreateJob() {
               fontSize: theme.typography.sizes.base,
               fontFamily: theme.typography.fonts.regular,
               color: theme.colors.text.secondary,
-              textAlign: 'center',
+              textAlign: "center",
               marginBottom: theme.spacing.xl,
               lineHeight: theme.typography.sizes.base * 1.5,
             }}
@@ -520,9 +612,9 @@ export default function CreateJob() {
           <TouchableOpacity
             onPress={handleSuccessClose}
             style={{
-              width: '100%',
+              width: "100%",
               borderRadius: theme.borderRadius.lg,
-              overflow: 'hidden',
+              overflow: "hidden",
             }}
             activeOpacity={0.9}
           >
@@ -533,7 +625,7 @@ export default function CreateJob() {
               ]}
               style={{
                 paddingVertical: theme.spacing.md,
-                alignItems: 'center',
+                alignItems: "center",
               }}
             >
               <Text
@@ -553,7 +645,10 @@ export default function CreateJob() {
   );
 
   return (
-    <SafeAreaWrapper backgroundColor={theme.colors.background.primary} edges={['left', 'right', 'bottom']}>
+    <SafeAreaWrapper
+      backgroundColor={theme.colors.background.primary}
+      edges={["left", "right", "bottom"]}
+    >
       <StatusBar
         barStyle="dark-content"
         backgroundColor={theme.colors.background.card}
@@ -563,11 +658,11 @@ export default function CreateJob() {
       <LinearGradient
         colors={[
           theme.colors.background.accent,
-          'rgba(27, 163, 163, 0.02)',
+          "rgba(27, 163, 163, 0.02)",
           theme.colors.background.primary,
         ]}
         style={{
-          position: 'absolute',
+          position: "absolute",
           left: 0,
           right: 0,
           top: 0,
@@ -580,7 +675,7 @@ export default function CreateJob() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView
           style={{ flex: 1 }}
@@ -616,7 +711,7 @@ export default function CreateJob() {
             <CustomInput
               label="Job Title"
               value={formData.jobTitle}
-              onChangeText={(value) => updateFormData('jobTitle', value)}
+              onChangeText={(value) => updateFormData("jobTitle", value)}
               placeholder="eg: Senior React Developer"
               icon="briefcase-outline"
               error={errors.jobTitle}
@@ -626,8 +721,9 @@ export default function CreateJob() {
             <CustomInput
               label="Department"
               value={formData.department}
-              onChangeText={(value) => updateFormData('department', value)}
+              onChangeText={(value) => updateFormData("department", value)}
               placeholder="eg: Engineering, Marketing, Sales"
+              required
               icon="business-outline"
               error={errors.department}
             />
@@ -635,41 +731,40 @@ export default function CreateJob() {
             <CustomDropdown
               label="Job Category"
               value={formData.jobCategory}
-              onSelect={(value) => updateFormData('jobCategory', value)}
+              onSelect={(value) => updateFormData("jobCategory", value)}
               options={jobCategoryOptions}
+              required
               placeholder="Select job category"
               icon="grid-outline"
               error={errors.jobCategory}
             />
 
-            <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
-              <View style={{ flex: 1 }}>
-                <CustomInput
-                  label="City"
-                  value={formData.locationCity}
-                  onChangeText={(value) => updateFormData('locationCity', value)}
-                  placeholder="eg: Mumbai"
-                  icon="location-outline"
-                  error={errors.locationCity}
-                  required
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <CustomInput
-                  label="State"
-                  value={formData.locationState}
-                  onChangeText={(value) => updateFormData('locationState', value)}
-                  placeholder="eg: Maharashtra"
-                  icon="location-outline"
-                  error={errors.locationState}
-                />
-              </View>
+            <View style={{ flex: 1 }}>
+              <CustomInput
+                label="City"
+                value={formData.locationCity}
+                onChangeText={(value) => updateFormData("locationCity", value)}
+                placeholder="eg: Mumbai"
+                icon="location-outline"
+                error={errors.locationCity}
+                required
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <CustomInput
+                label="State"
+                value={formData.locationState}
+                onChangeText={(value) => updateFormData("locationState", value)}
+                placeholder="eg: Maharashtra"
+                icon="location-outline"
+                error={errors.locationState}
+              />
             </View>
 
             <CustomDropdown
               label="Employment Type"
               value={formData.employmentType}
-              onSelect={(value) => updateFormData('employmentType', value)}
+              onSelect={(value) => updateFormData("employmentType", value)}
               options={employmentTypeOptions}
               placeholder="Select employment type"
               icon="time-outline"
@@ -680,7 +775,7 @@ export default function CreateJob() {
             <CustomDropdown
               label="Work Mode"
               value={formData.workMode}
-              onSelect={(value) => updateFormData('workMode', value)}
+              onSelect={(value) => updateFormData("workMode", value)}
               options={workModeOptions}
               placeholder="Select work mode"
               icon="home-outline"
@@ -688,12 +783,14 @@ export default function CreateJob() {
               required
             />
 
-            <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+            <View style={{ flexDirection: "row", gap: theme.spacing.md }}>
               <View style={{ flex: 1 }}>
                 <CustomInput
                   label="Min Experience (Years)"
                   value={formData.experienceMin}
-                  onChangeText={(value) => updateFormData('experienceMin', value)}
+                  onChangeText={(value) =>
+                    updateFormData("experienceMin", value)
+                  }
                   placeholder="0"
                   icon="school-outline"
                   keyboardType="number-pad"
@@ -704,7 +801,9 @@ export default function CreateJob() {
                 <CustomInput
                   label="Max Experience (Years)"
                   value={formData.experienceMax}
-                  onChangeText={(value) => updateFormData('experienceMax', value)}
+                  onChangeText={(value) =>
+                    updateFormData("experienceMax", value)
+                  }
                   placeholder="eg: 5"
                   icon="school-outline"
                   keyboardType="number-pad"
@@ -716,7 +815,9 @@ export default function CreateJob() {
             <CustomInput
               label="Number of Positions"
               value={formData.positionsAvailable}
-              onChangeText={(value) => updateFormData('positionsAvailable', value)}
+              onChangeText={(value) =>
+                updateFormData("positionsAvailable", value)
+              }
               placeholder="1"
               icon="people-outline"
               keyboardType="number-pad"
@@ -749,36 +850,34 @@ export default function CreateJob() {
             <CustomDropdown
               label="Salary Type"
               value={formData.salaryType}
-              onSelect={(value) => updateFormData('salaryType', value)}
+              onSelect={(value) => updateFormData("salaryType", value)}
               options={salaryTypeOptions}
               placeholder="Select salary type"
               icon="cash-outline"
               error={errors.salaryType}
             />
 
-            <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
-              <View style={{ flex: 1 }}>
-                <CustomInput
-                  label="Minimum Salary (₹)"
-                  value={formData.salaryMin}
-                  onChangeText={(value) => updateFormData('salaryMin', value)}
-                  placeholder="eg: 800000"
-                  icon="cash-outline"
-                  keyboardType="numeric"
-                  error={errors.salaryMin}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <CustomInput
-                  label="Maximum Salary (₹)"
-                  value={formData.salaryMax}
-                  onChangeText={(value) => updateFormData('salaryMax', value)}
-                  placeholder="eg: 1500000"
-                  icon="cash-outline"
-                  keyboardType="numeric"
-                  error={errors.salaryMax}
-                />
-              </View>
+            <View style={{ flex: 1 }}>
+              <CustomInput
+                label="Minimum Salary (₹)"
+                value={formData.salaryMin}
+                onChangeText={(value) => updateFormData("salaryMin", value)}
+                placeholder="eg: 800000"
+                icon="cash-outline"
+                keyboardType="numeric"
+                error={errors.salaryMin}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <CustomInput
+                label="Maximum Salary (₹)"
+                value={formData.salaryMax}
+                onChangeText={(value) => updateFormData("salaryMax", value)}
+                placeholder="eg: 1500000"
+                icon="cash-outline"
+                keyboardType="numeric"
+                error={errors.salaryMax}
+              />
             </View>
           </View>
 
@@ -807,7 +906,7 @@ export default function CreateJob() {
             <CustomInput
               label="Job Description"
               value={formData.jobDescription}
-              onChangeText={(value) => updateFormData('jobDescription', value)}
+              onChangeText={(value) => updateFormData("jobDescription", value)}
               placeholder="Describe the role, company culture, and what makes this position exciting..."
               icon="document-text-outline"
               error={errors.jobDescription}
@@ -819,7 +918,9 @@ export default function CreateJob() {
             <CustomInput
               label="Key Responsibilities"
               value={formData.jobResponsibilities}
-              onChangeText={(value) => updateFormData('jobResponsibilities', value)}
+              onChangeText={(value) =>
+                updateFormData("jobResponsibilities", value)
+              }
               placeholder="• Lead development of React applications&#10;• Mentor junior developers&#10;• Collaborate with design team..."
               icon="list-outline"
               error={errors.jobResponsibilities}
@@ -831,7 +932,7 @@ export default function CreateJob() {
             <CustomInput
               label="Requirements"
               value={formData.jobRequirements}
-              onChangeText={(value) => updateFormData('jobRequirements', value)}
+              onChangeText={(value) => updateFormData("jobRequirements", value)}
               placeholder="• 3+ years React experience&#10;• Strong JavaScript knowledge&#10;• Experience with REST APIs..."
               icon="checkmark-done-outline"
               error={errors.jobRequirements}
@@ -843,7 +944,9 @@ export default function CreateJob() {
             <CustomInput
               label="Education Requirement"
               value={formData.educationRequirement}
-              onChangeText={(value) => updateFormData('educationRequirement', value)}
+              onChangeText={(value) =>
+                updateFormData("educationRequirement", value)
+              }
               placeholder="eg: Bachelor's in Computer Science or equivalent"
               icon="school-outline"
               error={errors.educationRequirement}
@@ -852,7 +955,7 @@ export default function CreateJob() {
             <CustomInput
               label="Benefits & Perks"
               value={formData.benefits}
-              onChangeText={(value) => updateFormData('benefits', value)}
+              onChangeText={(value) => updateFormData("benefits", value)}
               placeholder="• Health insurance&#10;• Flexible working hours&#10;• Professional development budget..."
               icon="gift-outline"
               error={errors.benefits}
@@ -883,10 +986,11 @@ export default function CreateJob() {
               Skills & Priority
             </Text>
 
-            <SkillsInput
+            <SkillsInput3
               skills={skills}
               onSkillsChange={handleSkillsChange}
-              label="Required Skills *"
+              availableSkills={availableSkills}
+              label="Required Skills"
               required={true}
               error={errors.skills}
             />
@@ -894,28 +998,78 @@ export default function CreateJob() {
             <CustomDropdown
               label="Priority Level"
               value={formData.priorityLevel}
-              onSelect={(value) => updateFormData('priorityLevel', value)}
+              onSelect={(value) => updateFormData("priorityLevel", value)}
               options={priorityLevelOptions}
               placeholder="Select priority level"
               icon="flag-outline"
               error={errors.priorityLevel}
             />
 
-            <CustomInput
+            <CustomDatePicker
               label="Application Deadline"
               value={formData.applicationDeadline}
-              onChangeText={(value) => updateFormData('applicationDeadline', value)}
+              onChange={(date) => updateFormData("applicationDeadline", date)}
               placeholder="YYYY-MM-DD (eg: 2025-12-31)"
               icon="calendar-outline"
+              required
               error={errors.applicationDeadline}
             />
           </View>
+
+          {/* Account Verification Message */}
+          {accountStatus === "inactive" && (
+            <View
+              style={{
+                backgroundColor: "rgba(245, 158, 11, 0.1)",
+                borderRadius: theme.borderRadius.md,
+                padding: theme.spacing.md,
+                marginBottom: theme.spacing.lg,
+                borderLeftWidth: 3,
+                borderLeftColor: theme.colors.status.warning,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "flex-start",
+                  marginBottom: theme.spacing.xs,
+                }}
+              >
+                <Ionicons
+                  name="time-outline"
+                  size={18}
+                  color={theme.colors.status.warning}
+                  style={{ marginRight: theme.spacing.sm, marginTop: 2 }}
+                />
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.sm,
+                    fontFamily: theme.typography.fonts.bold,
+                    color: theme.colors.status.warning,
+                  }}
+                >
+                  Account Under Verification
+                </Text>
+              </View>
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.regular,
+                  color: theme.colors.status.warning,
+                  lineHeight: theme.typography.sizes.sm * 1.5,
+                }}
+              >
+                Your account is under verification. You can save drafts but
+                cannot publish jobs until your account is verified.
+              </Text>
+            </View>
+          )}
 
           {/* Post Error Message */}
           {postError ? (
             <View
               style={{
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                backgroundColor: "rgba(239, 68, 68, 0.1)",
                 borderRadius: theme.borderRadius.md,
                 padding: theme.spacing.md,
                 marginBottom: theme.spacing.lg,
@@ -923,7 +1077,13 @@ export default function CreateJob() {
                 borderLeftColor: theme.colors.status.error,
               }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: theme.spacing.xs }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "flex-start",
+                  marginBottom: theme.spacing.xs,
+                }}
+              >
                 <Ionicons
                   name="alert-circle"
                   size={18}
@@ -957,7 +1117,7 @@ export default function CreateJob() {
         {/* Fixed Bottom Buttons */}
         <View
           style={{
-            position: 'absolute',
+            position: "absolute",
             bottom: 0,
             left: 0,
             right: 0,
@@ -968,7 +1128,7 @@ export default function CreateJob() {
             paddingVertical: theme.spacing.md,
           }}
         >
-          <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+          <View style={{ flexDirection: "row", gap: theme.spacing.md }}>
             <TouchableOpacity
               onPress={handleSaveDraft}
               disabled={isSubmitting}
@@ -977,7 +1137,7 @@ export default function CreateJob() {
                 backgroundColor: theme.colors.background.accent,
                 borderRadius: theme.borderRadius.lg,
                 paddingVertical: theme.spacing.md,
-                alignItems: 'center',
+                alignItems: "center",
                 borderWidth: 1,
                 borderColor: theme.colors.primary.teal,
                 opacity: isSubmitting ? 0.5 : 1,
@@ -997,25 +1157,31 @@ export default function CreateJob() {
 
             <TouchableOpacity
               onPress={handlePublish}
-              disabled={isSubmitting}
+              disabled={isSubmitting || accountStatus === "inactive"}
               style={{
                 flex: 2,
                 borderRadius: theme.borderRadius.lg,
-                overflow: 'hidden',
+                overflow: "hidden",
               }}
               activeOpacity={0.9}
             >
               <LinearGradient
                 colors={
-                  isSubmitting
-                    ? [theme.colors.neutral.mediumGray, theme.colors.neutral.mediumGray]
-                    : [theme.colors.primary.teal, theme.colors.secondary.darkTeal]
+                  isSubmitting || accountStatus === "inactive"
+                    ? [
+                        theme.colors.neutral.mediumGray,
+                        theme.colors.neutral.mediumGray,
+                      ]
+                    : [
+                        theme.colors.primary.teal,
+                        theme.colors.secondary.darkTeal,
+                      ]
                 }
                 style={{
                   paddingVertical: theme.spacing.md,
-                  alignItems: 'center',
-                  flexDirection: 'row',
-                  justifyContent: 'center',
+                  alignItems: "center",
+                  flexDirection: "row",
+                  justifyContent: "center",
                 }}
               >
                 {isSubmitting && (
@@ -1032,7 +1198,7 @@ export default function CreateJob() {
                     color: theme.colors.neutral.white,
                   }}
                 >
-                  {isSubmitting ? 'Publishing...' : 'Publish Job'}
+                  {isSubmitting ? "Publishing..." : "Publish Job"}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>

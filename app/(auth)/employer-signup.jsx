@@ -1,14 +1,15 @@
-import CustomDropdown from '@/components/CustomDropdown';
-import CustomInput from '@/components/CustomInput';
-import SafeAreaWrapper from '@/components/SafeAreaWrapper';
-import VerificationModal from '@/components/VerificationModal';
-import apiService from '@/services/apiService';
-import theme from '@/theme';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
-import React, { useState } from 'react';
+import CustomDropdown from "@/components/CustomDropdown";
+import CustomInput from "@/components/CustomInput";
+import CustomVerifyInput from "@/components/CustomVerifyInput";
+import SafeAreaWrapper from "@/components/SafeAreaWrapper";
+import apiService from "@/services/apiService";
+import theme from "@/theme";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import React, { useEffect, useRef, useState } from "react";
+
 import {
   Dimensions,
   Image,
@@ -19,37 +20,38 @@ import {
   StatusBar,
   Text,
   TouchableOpacity,
-  View,
-} from 'react-native';
+  View
+} from "react-native";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
 export default function EmployerSignup() {
   // Form State
   const [formData, setFormData] = useState({
     // Contact Person Info
-    firstName: '',
-    lastName: '',
-    mobileNumber: '',
-    gender: '',
+    first_name: "",
+    last_name: "",
+    phone: "",
+    gender: "",
 
     // Company Info
-    companyName: '',
-    fullAddress: '',
-    city: '',
-    state: '',
-    gstNumber: '',
-    industry: '',
-    companyWebsite: '',
-    companySize: '',
-    companyType: '',
-    foundedYear: '',
-    companyDescription: '',
-
+    company_name: "",
+    full_address: "",
+    city: "",
+    state: "",
+    gst_number: "",
+    industry: "",
+    company_website: "",
+    company_size: "",
+    company_type: "",
+    founded_year: "",
+    company_description: "",
+    email_verified: false,
+    phone_verified: false,
     // Login Credentials
-    email: '',
-    password: '',
-    confirmPassword: '',
+    email: "",
+    password: "",
+    confirmPassword: "",
   });
 
   const [errors, setErrors] = useState({});
@@ -59,10 +61,16 @@ export default function EmployerSignup() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [signupError, setSignupError] = useState("");
+  const [requiresApproval, setRequiresApproval] = useState(false);
 
-  // Email verification state (for new verification-first flow)
-  const [showVerificationModal, setShowVerificationModal] = useState(false);
-  const [signupEmail, setSignupEmail] = useState('');
+  const isMounted = useRef(true);
+  const scrollViewRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   // Dropdown Options
   const genderOptions = [
@@ -104,12 +112,40 @@ export default function EmployerSignup() {
   ];
 
   // Update form data
-  const updateFormData = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+  const updateFormData = (field, value, index = null, listType = null) => {
+    if (listType && index !== null) {
+      setFormData((prev) => {
+        const updatedList = [...prev[listType]];
+        updatedList[index][field] = value;
+        return {
+          ...prev,
+          [listType]: updatedList,
+        };
+      });
+
+      if (errors[listType]?.[index]?.[field]) {
+        setErrors((prev) => {
+          const updatedErrors = { ...prev };
+          if (updatedErrors[listType] && updatedErrors[listType][index]) {
+            updatedErrors[listType][index][field] = null;
+          }
+          return updatedErrors;
+        });
+      }
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        [field]: value,
+      }));
+
+      if (errors[field]) {
+        setErrors((prev) => ({
+          ...prev,
+          [field]: null,
+        }));
+      }
     }
-    // Clear signup error when user starts typing
+
     if (signupError) {
       setSignupError("");
     }
@@ -120,78 +156,215 @@ export default function EmployerSignup() {
     const newErrors = {};
 
     // Contact person validation
-    if (!formData.firstName.trim()) {
-      newErrors.firstName = 'First name is required';
+    if (!formData.first_name.trim()) {
+      newErrors.first_name = "First name is required";
     }
 
-    if (!formData.lastName.trim()) {
-      newErrors.lastName = 'Last name is required';
+    if (!formData.last_name.trim()) {
+      newErrors.last_name = "Last name is required";
     }
 
-    if (!formData.mobileNumber.trim()) {
-      newErrors.mobileNumber = 'Mobile number is required';
-    } else if (!/^\d{10}$/.test(formData.mobileNumber)) {
-      newErrors.mobileNumber = 'Please enter a valid 10-digit mobile number';
+    if (!formData.city.trim()) {
+      newErrors.city = "City is required";
     }
 
-    // Company validation
-    if (!formData.companyName.trim()) {
-      newErrors.companyName = 'Company name is required';
+    if (!formData.state.trim()) {
+      newErrors.state = "State is required";
     }
 
-    if (!formData.gstNumber.trim()) {
-      newErrors.gstNumber = 'GST number is required';
-    } else if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(formData.gstNumber)) {
-      newErrors.gstNumber = 'Please enter a valid GST number';
+    if (!formData.phone.trim()) {
+      newErrors.phone = "Mobile number is required";
+    } else if (!/^\d{10}$/.test(formData.phone)) {
+      newErrors.phone = "Please enter a valid 10-digit mobile number";
+    }
+
+    if (!formData.email_verified) {
+      newErrors.email_verified = "Email must be verified";
+    }
+
+    if (!formData.phone_verified) {
+      newErrors.phone_verified = "Phone number must be verified";
+    }
+
+    if (!formData.company_name.trim()) {
+      newErrors.company_name = "Company name is required";
+    }
+
+    if (!formData.gst_number.trim()) {
+      newErrors.gst_number = "GST number is required";
+    } else if (
+      !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(
+        formData.gst_number
+      )
+    ) {
+      newErrors.gst_number = "Please enter a valid GST number";
     }
 
     if (!formData.industry) {
-      newErrors.industry = 'Industry is required';
+      newErrors.industry = "Industry is required";
     }
 
-    // URL validation
-    const urlRegex = /^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$/;
-    if (formData.companyWebsite && !urlRegex.test(formData.companyWebsite)) {
-      newErrors.companyWebsite = 'Invalid website URL';
+    const urlRegex =
+      /^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$/;
+    if (formData.company_website && !urlRegex.test(formData.company_website)) {
+      newErrors.company_website = "Invalid website URL";
     }
 
-    // Founded year validation
-    if (formData.foundedYear && (formData.foundedYear < 1800 || formData.foundedYear > new Date().getFullYear())) {
-      newErrors.foundedYear = 'Invalid founded year';
+    if (
+      formData.founded_year &&
+      (formData.founded_year < 1800 ||
+        formData.founded_year > new Date().getFullYear())
+    ) {
+      newErrors.founded_year = "Invalid founded year";
     }
 
-    // Login credentials
     if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
+      newErrors.email = "Email is required";
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
+      newErrors.email = "Please enter a valid email address";
     }
 
     if (!formData.password) {
-      newErrors.password = 'Password is required';
+      newErrors.password = "Password is required";
     } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+      newErrors.password = "Password must be at least 6 characters";
     }
 
     if (!formData.confirmPassword) {
-      newErrors.confirmPassword = 'Please confirm your password';
+      newErrors.confirmPassword = "Please confirm your password";
     } else if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
+      newErrors.confirmPassword = "Passwords do not match";
     }
 
     if (!acceptedTerms) {
-      newErrors.terms = 'You must accept the Terms and Conditions';
+      newErrors.terms = "You must accept the Terms and Conditions";
     }
 
     setErrors(newErrors);
+
+    // Scroll to first error
+    if (Object.keys(newErrors).length > 0) {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    }
+
     return Object.keys(newErrors).length === 0;
+  };
+
+  // Store user data securely
+  const storeUserData = async (response, user) => {
+    try {
+      const storePromises = [];
+
+      // Store JWT token (most important)
+      if (response.token) {
+        storePromises.push(
+          SecureStore.setItemAsync("jwt_token", response.token)
+        );
+      }
+
+      // Store user data
+      if (user.user_id) {
+        storePromises.push(
+          SecureStore.setItemAsync("user_id", user.user_id.toString())
+        );
+      }
+
+      if (user.user_type) {
+        storePromises.push(
+          SecureStore.setItemAsync("user_type", user.user_type)
+        );
+      }
+
+      if (user.status) {
+        storePromises.push(
+          SecureStore.setItemAsync("user_status", user.status)
+        );
+      }
+
+      if (user.email) {
+        storePromises.push(SecureStore.setItemAsync("user_email", user.email));
+      }
+
+      if (user.first_name) {
+        storePromises.push(
+          SecureStore.setItemAsync("user_first_name", user.first_name)
+        );
+      }
+
+      if (user.last_name) {
+        storePromises.push(
+          SecureStore.setItemAsync("user_last_name", user.last_name)
+        );
+      }
+
+      if (user.phone) {
+        storePromises.push(SecureStore.setItemAsync("user_phone", user.phone));
+      }
+
+      // Store company data
+      if (user.company?.company_id) {
+        storePromises.push(
+          SecureStore.setItemAsync(
+            "company_id",
+            user.company.company_id.toString()
+          )
+        );
+      }
+
+      if (user.company?.company_name) {
+        storePromises.push(
+          SecureStore.setItemAsync("company_name", user.company.company_name)
+        );
+      }
+
+      // Store approval status
+      if (response.requiresApproval !== undefined) {
+        storePromises.push(
+          SecureStore.setItemAsync(
+            "requires_approval",
+            response.requiresApproval.toString()
+          )
+        );
+      }
+
+      // Wait for all storage operations to complete
+      await Promise.all(storePromises);
+
+      console.log("✅ All user data stored successfully");
+      return true;
+    } catch (error) {
+      console.error("❌ Error storing user data:", error);
+      throw error;
+    }
+  };
+
+  // Clear all stored data (for cleanup on error)
+  const clearStoredData = async () => {
+    try {
+      const keys = [
+        "jwt_token",
+        "user_id",
+        "user_type",
+        "user_status",
+        "user_email",
+        "user_first_name",
+        "user_last_name",
+        "user_phone",
+        "company_id",
+        "company_name",
+        "requires_approval",
+      ];
+
+      await Promise.all(keys.map((key) => SecureStore.deleteItemAsync(key)));
+      console.log("✅ Cleared all stored data");
+    } catch (error) {
+      console.error("❌ Error clearing stored data:", error);
+    }
   };
 
   // Handle form submission
   const handleSubmit = async () => {
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsRegistering(true);
     setSignupError("");
@@ -199,82 +372,140 @@ export default function EmployerSignup() {
     try {
       const response = await apiService.employerSignup({
         // Contact Person
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        mobileNumber: formData.mobileNumber,
-        gender: formData.gender || null,
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        phone: formData.phone,
+        gender: formData.gender || "",
+        email_verified: formData.email_verified ? 1 : 0,
+        phone_verified: formData.phone_verified ? 1 : 0,
 
         // Company Info
-        companyName: formData.companyName,
-        fullAddress: formData.fullAddress,
+        company_name: formData.company_name,
+        full_address: formData.full_address || "",
         city: formData.city,
         state: formData.state,
-        gstNumber: formData.gstNumber,
+        gst_number: formData.gst_number,
         industry: formData.industry,
-        companyWebsite: formData.companyWebsite,
-        companySize: formData.companySize,
-        companyType: formData.companyType || 'startup',
-        foundedYear: formData.foundedYear ? parseInt(formData.foundedYear) : null,
-        companyDescription: formData.companyDescription,
+        company_website: formData.company_website || "",
+        company_size: formData.company_size || "",
+        company_type: formData.company_type || "",
+        founded_year: formData.founded_year
+          ? parseInt(formData.founded_year)
+          : 0,
+        company_description: formData.company_description || "",
 
         // Login Credentials
         email: formData.email,
         password: formData.password,
       });
 
-      if (response.success) {
-        // New flow: Check if verification is required (should always be true now)
-        if (response.requires_verification || response.data?.verification_required) {
-          // Store email for verification modal
-          setSignupEmail(formData.email);
+      if (response.success && response.data) {
+        const user = response.data;
 
-          // Show verification modal
-          setShowVerificationModal(true);
-          setIsRegistering(false);
+        try {
+          // Store all user data
+          await storeUserData(response, user);
 
-          console.log('✅ Employer signup data submitted, verification modal shown');
-          return;
+          // Check if account requires approval
+          if (response.requiresApproval) {
+            setRequiresApproval(true);
+            console.log("⏳ Account pending admin approval");
+          }
+
+          // Show success modal
+          setShowSuccessModal(true);
+        } catch (storageError) {
+          console.error("❌ Storage error:", storageError);
+
+          // Clear any partially stored data
+          await clearStoredData();
+
+          setSignupError(
+            "Registration successful but failed to store credentials. Please try logging in."
+          );
+
+          // Navigate to login after delay
+          setTimeout(() => {
+            if (isMounted.current) {
+              router.replace("/employer-login");
+            }
+          }, 3000);
         }
-
-        // Fallback (should not reach here with new flow, but keeping for safety)
-        console.warn('⚠️ Unexpected response: verification not required');
-        setSignupError('Unexpected response from server. Please try again.');
-
       } else {
-        // Handle validation errors from backend - display exact errors from API
-        if (response.errors && Array.isArray(response.errors) && response.errors.length > 0) {
-          // Display all errors from the API
-          setSignupError(response.errors.join('\n'));
+        // Handle backend validation errors
+        if (
+          response.errors &&
+          Array.isArray(response.errors) &&
+          response.errors.length > 0
+        ) {
+          setSignupError(response.errors.join("\n"));
         } else if (response.message) {
           setSignupError(response.message);
         } else {
-          setSignupError('Registration failed. Please try again.');
+          setSignupError("Registration failed. Please try again.");
         }
+
+        // Scroll to top to show error
+        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
       }
     } catch (error) {
-      console.error('Registration error:', error);
-      setSignupError('Network error. Please check your internet connection and try again.');
+      console.error("❌ Unexpected registration error:", error);
+
+      // Handle network errors
+      if (error.message?.includes("Network")) {
+        setSignupError(
+          "Network error. Please check your internet connection and try again."
+        );
+      } else if (error.message?.includes("timeout")) {
+        setSignupError("Request timeout. Please try again.");
+      } else {
+        setSignupError(
+          "An unexpected error occurred. Please try again later."
+        );
+      }
+
+      // Scroll to top to show error
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
     } finally {
-      setIsRegistering(false);
+      if (isMounted.current) {
+        setIsRegistering(false);
+      }
     }
   };
 
-  // Handle success completion - Auto-login and navigate to employer home
-  const handleSuccess = () => {
+  // Handle success completion
+  const handleSuccess = async () => {
     setShowSuccessModal(false);
-    router.replace('/employer/home');
+
+    // Wait for modal animation
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    if (!isMounted.current) return;
+
+    try {
+      // Navigate based on approval status
+      if (requiresApproval) {
+        // If account requires approval, go to pending approval screen
+        router.replace("/employer/home");
+      } else {
+        // If approved immediately, go to home
+        router.replace("/employer/home");
+      }
+    } catch (error) {
+      console.error("❌ Navigation error:", error);
+      // Fallback navigation
+      router.replace("/employer-login");
+    }
   };
 
-  // Verification handler (called when verification succeeds)
-  const handleVerificationSuccess = (userData) => {
-    console.log('✅ Verification successful, user data received:', userData);
-    // The VerificationModal component handles navigation automatically
-  };
-
-  // Close verification modal handler
-  const handleCloseVerification = () => {
-    setShowVerificationModal(false);
-    // Optionally navigate back or show a message
+  // Handle modal close
+  const handleModalClose = () => {
+    setShowSuccessModal(false);
+    setTimeout(() => {
+      if (isMounted.current) {
+        handleSuccess();
+      }
+    }, 300);
   };
 
   return (
@@ -287,12 +518,12 @@ export default function EmployerSignup() {
       {/* Background Gradient */}
       <LinearGradient
         colors={[
-          'rgba(30, 74, 114, 0.08)',
-          'rgba(30, 74, 114, 0.02)',
+          "rgba(30, 74, 114, 0.08)",
+          "rgba(30, 74, 114, 0.02)",
           theme.colors.background.primary,
         ]}
         style={{
-          position: 'absolute',
+          position: "absolute",
           left: 0,
           right: 0,
           top: 0,
@@ -303,13 +534,14 @@ export default function EmployerSignup() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
         {/* Header */}
         <View
           style={{
-            flexDirection: 'row',
-            alignItems: 'center',
+            flexDirection: "row",
+            alignItems: "center",
             paddingHorizontal: theme.spacing.lg,
             paddingVertical: theme.spacing.md,
             borderBottomWidth: 1,
@@ -331,7 +563,7 @@ export default function EmployerSignup() {
               color={theme.colors.text.primary}
             />
           </TouchableOpacity>
-          
+
           <Image
             source={require("@/assets/images/company/logo.png")}
             style={{
@@ -341,7 +573,7 @@ export default function EmployerSignup() {
             }}
             resizeMode="contain"
           />
-          
+
           <View style={{ flex: 1 }}>
             <Text
               style={{
@@ -365,13 +597,54 @@ export default function EmployerSignup() {
         </View>
 
         <ScrollView
+          ref={scrollViewRef}
           style={{ flex: 1 }}
           contentContainerStyle={{
             paddingHorizontal: theme.spacing.lg,
             paddingVertical: theme.spacing.lg,
           }}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
+          {/* Signup Error Message - At Top */}
+          {signupError ? (
+            <View
+              style={{
+                backgroundColor: "rgba(239, 68, 68, 0.1)",
+                borderRadius: theme.borderRadius.md,
+                padding: theme.spacing.md,
+                marginBottom: theme.spacing.lg,
+                borderLeftWidth: 3,
+                borderLeftColor: theme.colors.status.error,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "flex-start",
+                }}
+              >
+                <Ionicons
+                  name="alert-circle"
+                  size={20}
+                  color={theme.colors.status.error}
+                  style={{ marginRight: theme.spacing.sm, marginTop: 2 }}
+                />
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: theme.typography.sizes.sm,
+                    fontFamily: theme.typography.fonts.medium,
+                    color: theme.colors.status.error,
+                    lineHeight: theme.typography.sizes.sm * 1.4,
+                  }}
+                >
+                  {signupError}
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
           {/* Contact Person Information */}
           <Text
             style={{
@@ -384,47 +657,49 @@ export default function EmployerSignup() {
             Contact Person Information
           </Text>
 
-          <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+          <View style={{ flexDirection: "row", gap: theme.spacing.md }}>
             <View style={{ flex: 1 }}>
               <CustomInput
                 label="First Name"
-                value={formData.firstName}
-                onChangeText={(value) => updateFormData('firstName', value)}
+                value={formData.first_name}
+                onChangeText={(value) => updateFormData("first_name", value)}
                 placeholder="Enter first name"
                 icon="person-outline"
-                error={errors.firstName}
+                error={errors.first_name}
                 required
               />
             </View>
             <View style={{ flex: 1 }}>
               <CustomInput
                 label="Last Name"
-                value={formData.lastName}
-                onChangeText={(value) => updateFormData('lastName', value)}
+                value={formData.last_name}
+                onChangeText={(value) => updateFormData("last_name", value)}
                 placeholder="Enter last name"
                 icon="person-outline"
-                error={errors.lastName}
+                error={errors.last_name}
                 required
               />
             </View>
           </View>
 
-          <CustomInput
+          <CustomVerifyInput
+            userType="employer"
             label="Mobile Number"
-            value={formData.mobileNumber}
-            onChangeText={(value) => updateFormData('mobileNumber', value)}
-            placeholder="Enter 10-digit mobile number"
-            icon="call-outline"
-            keyboardType="phone-pad"
-            maxLength={10}
-            error={errors.mobileNumber}
             required
+            value={formData.phone}
+            verified={formData.phone_verified}
+            onChangeText={(value) => updateFormData("phone", value)}
+            onVerifiedChange={(val) => updateFormData("phone_verified", val)}
+            placeholder="Enter phone number"
+            icon="call-outline"
+            type="phone"
+            error={errors.phone || errors.phone_verified}
           />
 
           <CustomDropdown
             label="Gender"
             value={formData.gender}
-            onSelect={(value) => updateFormData('gender', value)}
+            onSelect={(value) => updateFormData("gender", value)}
             options={genderOptions}
             placeholder="Select gender (optional)"
             icon="person-outline"
@@ -446,29 +721,31 @@ export default function EmployerSignup() {
 
           <CustomInput
             label="Company Name"
-            value={formData.companyName}
-            onChangeText={(value) => updateFormData('companyName', value)}
+            value={formData.company_name}
+            onChangeText={(value) => updateFormData("company_name", value)}
             placeholder="Enter your company name"
             icon="business-outline"
-            error={errors.companyName}
+            error={errors.company_name}
             required
           />
 
           <CustomInput
             label="GST Number"
-            value={formData.gstNumber}
-            onChangeText={(value) => updateFormData('gstNumber', value.toUpperCase())}
-            placeholder="Enter GST number (e.g., 22AAAAA0000A1Z5)"
+            value={formData.gst_number}
+            onChangeText={(value) =>
+              updateFormData("gst_number", value.toUpperCase())
+            }
+            placeholder="Enter GST number (eg: 22AAAAA0000A1Z5)"
             icon="document-text-outline"
             maxLength={15}
-            error={errors.gstNumber}
+            error={errors.gst_number}
             required
           />
 
           <CustomDropdown
             label="Industry"
             value={formData.industry}
-            onSelect={(value) => updateFormData('industry', value)}
+            onSelect={(value) => updateFormData("industry", value)}
             options={industryOptions}
             placeholder="Select industry"
             icon="business-outline"
@@ -478,93 +755,96 @@ export default function EmployerSignup() {
 
           <CustomInput
             label="Company Website"
-            value={formData.companyWebsite}
-            onChangeText={(value) => updateFormData('companyWebsite', value)}
+            value={formData.company_website}
+            onChangeText={(value) => updateFormData("company_website", value)}
             placeholder="https://www.example.com (Optional)"
             icon="globe-outline"
             keyboardType="url"
             autoCapitalize="none"
-            error={errors.companyWebsite}
+            error={errors.company_website}
           />
 
           <CustomDropdown
             label="Company Size"
-            value={formData.companySize}
-            onSelect={(value) => updateFormData('companySize', value)}
+            value={formData.company_size}
+            onSelect={(value) => updateFormData("company_size", value)}
             options={companySizeOptions}
             placeholder="Select company size (optional)"
             icon="people-outline"
-            error={errors.companySize}
+            error={errors.company_size}
           />
 
           <CustomDropdown
             label="Company Type"
-            value={formData.companyType}
-            onSelect={(value) => updateFormData('companyType', value)}
+            value={formData.company_type}
+            onSelect={(value) => updateFormData("company_type", value)}
             options={companyTypeOptions}
             placeholder="Select company type (optional)"
             icon="business-outline"
-            error={errors.companyType}
+            error={errors.company_type}
           />
 
-          <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
-            <View style={{ flex: 1 }}>
-              <CustomInput
-                label="Founded Year"
-                value={formData.foundedYear?.toString() || ''}
-                onChangeText={(value) => updateFormData('foundedYear', value)}
-                placeholder="e.g., 2020"
-                icon="calendar-outline"
-                keyboardType="number-pad"
-                maxLength={4}
-                error={errors.foundedYear}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <CustomInput
-                label="City"
-                value={formData.city}
-                onChangeText={(value) => updateFormData('city', value)}
-                placeholder="Enter city"
-                icon="location-outline"
-                error={errors.city}
-              />
-            </View>
+          <View style={{ flex: 1 }}>
+            <CustomInput
+              label="Founded Year"
+              value={formData.founded_year?.toString() || ""}
+              onChangeText={(value) => updateFormData("founded_year", value)}
+              placeholder="eg: 2020"
+              icon="calendar-outline"
+              keyboardType="number-pad"
+              maxLength={4}
+              error={errors.founded_year}
+            />
           </View>
 
-          <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+          <View style={{ flex: 1 }}>
+            <CustomInput
+              label="City"
+              value={formData.city}
+              onChangeText={(value) => updateFormData("city", value)}
+              placeholder="Enter city"
+              icon="location-outline"
+              required
+              error={errors.city}
+            />
+          </View>
+
+          <View style={{ flexDirection: "row", gap: theme.spacing.md }}>
             <View style={{ flex: 1 }}>
               <CustomInput
                 label="State"
                 value={formData.state}
-                onChangeText={(value) => updateFormData('state', value)}
+                onChangeText={(value) => updateFormData("state", value)}
                 placeholder="Enter state"
                 icon="location-outline"
                 error={errors.state}
+                required
               />
             </View>
           </View>
 
           <CustomInput
             label="Full Address"
-            value={formData.fullAddress}
-            onChangeText={(value) => updateFormData('fullAddress', value)}
+            value={formData.full_address}
+            onChangeText={(value) => updateFormData("full_address", value)}
             placeholder="Complete company address (Optional)"
             icon="home-outline"
             multiline
             numberOfLines={2}
-            error={errors.fullAddress}
+            error={errors.full_address}
           />
 
           <CustomInput
             label="Company Description"
-            value={formData.companyDescription}
-            onChangeText={(value) => updateFormData('companyDescription', value)}
+            value={formData.company_description}
+            onChangeText={(value) =>
+              updateFormData("company_description", value)
+            }
             placeholder="Brief description about your company (Optional)"
             icon="document-text-outline"
             multiline
             numberOfLines={3}
-            error={errors.companyDescription}
+            error={errors.company_description}
           />
 
           {/* Login Credentials Section */}
@@ -580,22 +860,24 @@ export default function EmployerSignup() {
             Login Credentials
           </Text>
 
-          <CustomInput
+          <CustomVerifyInput
+            userType="employer"
             label="Email Address"
             value={formData.email}
-            onChangeText={(value) => updateFormData('email', value.toLowerCase())}
+            required
+            verified={formData.email_verified}
+            onChangeText={(value) => updateFormData("email", value)}
+            onVerifiedChange={(val) => updateFormData("email_verified", val)}
             placeholder="Enter your email address"
             icon="mail-outline"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            error={errors.email}
-            required
+            type="email"
+            error={errors.email || errors.email_verified}
           />
 
           <CustomInput
             label="Password"
             value={formData.password}
-            onChangeText={(value) => updateFormData('password', value)}
+            onChangeText={(value) => updateFormData("password", value)}
             placeholder="Create a password (min 6 characters)"
             icon="lock-closed-outline"
             secureTextEntry
@@ -608,53 +890,35 @@ export default function EmployerSignup() {
           <CustomInput
             label="Confirm Password"
             value={formData.confirmPassword}
-            onChangeText={(value) => updateFormData('confirmPassword', value)}
+            onChangeText={(value) => updateFormData("confirmPassword", value)}
             placeholder="Re-enter your password"
             icon="lock-closed-outline"
             secureTextEntry
             showPassword={showConfirmPassword}
-            onTogglePassword={() => setShowConfirmPassword(!showConfirmPassword)}
+            onTogglePassword={() =>
+              setShowConfirmPassword(!showConfirmPassword)
+            }
             error={errors.confirmPassword}
             required
           />
 
-          {/* Signup Error Message */}
-          {signupError ? (
-            <View
-              style={{
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                borderRadius: theme.borderRadius.md,
-                padding: theme.spacing.md,
-                marginTop: theme.spacing.lg,
-                borderLeftWidth: 3,
-                borderLeftColor: theme.colors.status.error,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: theme.typography.sizes.sm,
-                  fontFamily: theme.typography.fonts.medium,
-                  color: theme.colors.status.error,
-                  textAlign: 'center',
-                }}
-              >
-                {signupError}
-              </Text>
-            </View>
-          ) : null}
-
           {/* Terms and Conditions */}
-          <View style={{ marginTop: theme.spacing.xl, marginBottom: theme.spacing.lg }}>
+          <View
+            style={{
+              marginTop: theme.spacing.xl,
+              marginBottom: theme.spacing.lg,
+            }}
+          >
             <TouchableOpacity
               onPress={() => {
                 setAcceptedTerms(!acceptedTerms);
                 if (errors.terms) {
-                  setErrors(prev => ({ ...prev, terms: '' }));
+                  setErrors((prev) => ({ ...prev, terms: "" }));
                 }
               }}
               style={{
-                flexDirection: 'row',
-                alignItems: 'flex-start',
+                flexDirection: "row",
+                alignItems: "flex-start",
                 paddingVertical: theme.spacing.sm,
               }}
               activeOpacity={0.8}
@@ -665,10 +929,14 @@ export default function EmployerSignup() {
                   height: 20,
                   borderRadius: 4,
                   borderWidth: 2,
-                  borderColor: acceptedTerms ? theme.colors.primary.deepBlue : theme.colors.border.medium,
-                  backgroundColor: acceptedTerms ? theme.colors.primary.deepBlue : 'transparent',
-                  justifyContent: 'center',
-                  alignItems: 'center',
+                  borderColor: acceptedTerms
+                    ? theme.colors.primary.deepBlue
+                    : theme.colors.border.medium,
+                  backgroundColor: acceptedTerms
+                    ? theme.colors.primary.deepBlue
+                    : "transparent",
+                  justifyContent: "center",
+                  alignItems: "center",
                   marginRight: theme.spacing.sm,
                   marginTop: 2,
                 }}
@@ -690,22 +958,22 @@ export default function EmployerSignup() {
                     lineHeight: theme.typography.sizes.sm * 1.4,
                   }}
                 >
-                  I accept the{' '}
+                  I accept the{" "}
                   <Text
                     style={{
                       color: theme.colors.primary.deepBlue,
                       fontFamily: theme.typography.fonts.semiBold,
-                      textDecorationLine: 'underline',
+                      textDecorationLine: "underline",
                     }}
                   >
                     Terms and Conditions
-                  </Text>
-                  {' '}and{' '}
+                  </Text>{" "}
+                  and{" "}
                   <Text
                     style={{
                       color: theme.colors.primary.deepBlue,
                       fontFamily: theme.typography.fonts.semiBold,
-                      textDecorationLine: 'underline',
+                      textDecorationLine: "underline",
                     }}
                   >
                     Privacy Policy
@@ -737,21 +1005,24 @@ export default function EmployerSignup() {
               borderRadius: theme.borderRadius.lg,
               marginTop: theme.spacing.lg,
               marginBottom: theme.spacing.xl,
-              overflow: 'hidden',
+              overflow: "hidden",
+              opacity: isRegistering ? 0.7 : 1,
             }}
             activeOpacity={0.9}
           >
             <LinearGradient
-              colors={[theme.colors.primary.deepBlue, theme.colors.secondary.darkBlue]}
+              colors={[
+                theme.colors.primary.deepBlue,
+                theme.colors.secondary.darkBlue,
+              ]}
               style={{
                 paddingVertical: theme.spacing.lg,
-                alignItems: 'center',
-                flexDirection: 'row',
-                justifyContent: 'center',
-                opacity: isRegistering ? 0.7 : 1,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
               }}
             >
-              {isRegistering && (
+              {isRegistering ? (
                 <View
                   style={{
                     width: 20,
@@ -759,17 +1030,18 @@ export default function EmployerSignup() {
                     borderRadius: 10,
                     borderWidth: 2,
                     borderColor: theme.colors.neutral.white,
-                    borderTopColor: 'transparent',
+                    borderTopColor: "transparent",
                     marginRight: theme.spacing.sm,
                   }}
                 />
+              ) : (
+                <Ionicons
+                  name="briefcase-outline"
+                  size={20}
+                  color={theme.colors.neutral.white}
+                  style={{ marginRight: theme.spacing.sm }}
+                />
               )}
-              <Ionicons
-                name={isRegistering ? "hourglass-outline" : "briefcase-outline"}
-                size={20}
-                color={theme.colors.neutral.white}
-                style={{ marginRight: theme.spacing.sm }}
-              />
               <Text
                 style={{
                   fontSize: theme.typography.sizes.md,
@@ -777,7 +1049,7 @@ export default function EmployerSignup() {
                   color: theme.colors.neutral.white,
                 }}
               >
-                {isRegistering ? 'Registering...' : 'Register Company'}
+                {isRegistering ? "Registering..." : "Register Company"}
               </Text>
             </LinearGradient>
           </TouchableOpacity>
@@ -785,11 +1057,11 @@ export default function EmployerSignup() {
           {/* Login Link */}
           <View
             style={{
-              flexDirection: 'row',
-              justifyContent: 'center',
-              alignItems: 'center',
+              flexDirection: "row",
+              justifyContent: "center",
+              alignItems: "center",
               paddingVertical: theme.spacing.md,
-              marginBottom: theme.spacing.lg,
+              marginBottom: theme.spacing.xl,
             }}
           >
             <Text
@@ -799,10 +1071,10 @@ export default function EmployerSignup() {
                 color: theme.colors.text.tertiary,
               }}
             >
-              Already have an account?{' '}
+              Already have an account?{" "}
             </Text>
             <TouchableOpacity
-              onPress={() => router.push('/employer-login')}
+              onPress={() => router.push("/employer-login")}
               activeOpacity={0.7}
             >
               <Text
@@ -819,27 +1091,19 @@ export default function EmployerSignup() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Email Verification Modal - New Separate Component */}
-      <VerificationModal
-        visible={showVerificationModal}
-        email={signupEmail}
-        userType="employer"
-        onVerified={handleVerificationSuccess}
-        onClose={handleCloseVerification}
-      />
-
       {/* Success Modal */}
       <Modal
         visible={showSuccessModal}
         transparent={true}
         animationType="fade"
+        onRequestClose={handleModalClose}
       >
         <View
           style={{
             flex: 1,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            justifyContent: 'center',
-            alignItems: 'center',
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            justifyContent: "center",
+            alignItems: "center",
             paddingHorizontal: theme.spacing.lg,
           }}
         >
@@ -847,16 +1111,16 @@ export default function EmployerSignup() {
             style={{
               backgroundColor: theme.colors.background.card,
               borderRadius: theme.borderRadius.xl,
-              width: '100%',
+              width: "100%",
               maxWidth: 400,
               padding: theme.spacing.xl,
-              alignItems: 'center',
+              alignItems: "center",
             }}
           >
             {/* Success Icon with Logo */}
             <View
               style={{
-                alignItems: 'center',
+                alignItems: "center",
                 marginBottom: theme.spacing.lg,
               }}
             >
@@ -866,8 +1130,8 @@ export default function EmployerSignup() {
                   height: 80,
                   borderRadius: 40,
                   backgroundColor: theme.colors.status.success,
-                  justifyContent: 'center',
-                  alignItems: 'center',
+                  justifyContent: "center",
+                  alignItems: "center",
                   marginBottom: theme.spacing.md,
                 }}
               >
@@ -877,7 +1141,7 @@ export default function EmployerSignup() {
                   color={theme.colors.neutral.white}
                 />
               </View>
-              
+
               <Image
                 source={require("@/assets/images/company/logo.png")}
                 style={{
@@ -894,7 +1158,7 @@ export default function EmployerSignup() {
                 fontFamily: theme.typography.fonts.bold,
                 color: theme.colors.text.primary,
                 marginBottom: theme.spacing.sm,
-                textAlign: 'center',
+                textAlign: "center",
               }}
             >
               Registration Successful!
@@ -905,30 +1169,41 @@ export default function EmployerSignup() {
                 fontSize: theme.typography.sizes.base,
                 fontFamily: theme.typography.fonts.regular,
                 color: theme.colors.text.secondary,
-                textAlign: 'center',
+                textAlign: "center",
                 marginBottom: theme.spacing.lg,
                 lineHeight: theme.typography.sizes.base * 1.5,
               }}
             >
-              Your company registration is pending admin approval. You'll receive a notification once approved.
+              Welcome! Your account has been created successfully. You can now start posting jobs and hiring talent.
             </Text>
 
             <TouchableOpacity
               onPress={handleSuccess}
               style={{
-                width: '100%',
+                width: "100%",
                 borderRadius: theme.borderRadius.lg,
-                overflow: 'hidden',
+                overflow: "hidden",
               }}
               activeOpacity={0.9}
             >
               <LinearGradient
-                colors={[theme.colors.primary.deepBlue, theme.colors.secondary.darkBlue]}
+                colors={[
+                  theme.colors.primary.deepBlue,
+                  theme.colors.secondary.darkBlue,
+                ]}
                 style={{
                   paddingVertical: theme.spacing.md,
-                  alignItems: 'center',
+                  alignItems: "center",
+                  flexDirection: "row",
+                  justifyContent: "center",
                 }}
               >
+                <Ionicons
+                  name={ "home-outline" }
+                  size={20}
+                  color={theme.colors.neutral.white}
+                  style={{ marginRight: theme.spacing.sm }}
+                />
                 <Text
                   style={{
                     fontSize: theme.typography.sizes.base,

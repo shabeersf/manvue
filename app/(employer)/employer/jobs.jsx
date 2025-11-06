@@ -2,9 +2,9 @@ import apiService from '@/services/apiService';
 import theme from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -44,12 +44,15 @@ export default function EmployerJobs() {
     loadUserData();
   }, []);
 
-  // Fetch jobs when user data is loaded or filter changes
-  useEffect(() => {
+ 
+
+  useFocusEffect(
+  useCallback(() => {
     if (userId || companyId) {
       fetchJobs();
     }
-  }, [userId, companyId, activeFilter]);
+  }, [userId, companyId,activeFilter])
+);
 
   const loadUserData = async () => {
     try {

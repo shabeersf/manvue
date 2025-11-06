@@ -31,6 +31,7 @@ export default function MessageDetails() {
   const conversationId = receivedData.id;
   const [messageText, setMessageText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const typingTimeoutRef = useRef(null);
   const [showOptions, setShowOptions] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -40,6 +41,7 @@ export default function MessageDetails() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const flatListRef = useRef(null);
+  const [isNearBottom, setIsNearBottom] = useState(true);
 
   const [companyData, setCompanyData] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -47,6 +49,8 @@ export default function MessageDetails() {
 
   const [showFileViewer, setShowFileViewer] = useState(false);
   const [viewerFile, setViewerFile] = useState(null);
+  const [imageLoading, setImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     if (conversationId) {
@@ -87,8 +91,8 @@ export default function MessageDetails() {
           });
         }
 
-        // Only scroll if it's initial load OR genuinely new message arrived
-        if (hasNewMessages) {
+        // Only scroll if it's initial load OR (genuinely new message arrived AND user is near bottom)
+        if (hasNewMessages && (showLoader || isNearBottom)) {
           setTimeout(() => {
             if (flatListRef.current) {
               flatListRef.current.scrollToEnd({ animated: !showLoader });
@@ -113,6 +117,14 @@ export default function MessageDetails() {
       return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     }
     return name.substring(0, 2).toUpperCase();
+  };
+
+  const handleScroll = (event) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+
+    // Consider user "near bottom" if within 100px of the bottom
+    setIsNearBottom(distanceFromBottom < 100);
   };
 
   const getFileType = (url, mimeType, fileName) => {
@@ -156,6 +168,8 @@ export default function MessageDetails() {
       console.log('Opening file:', { fullUrl, fileType, mimeType, fileName });
 
       if (fileType === 'image') {
+        setImageLoading(true);
+        setImageError(false);
         setViewerFile({
           type: 'image',
           url: fullUrl,
@@ -331,6 +345,25 @@ export default function MessageDetails() {
     });
   };
 
+  const handleTyping = (text) => {
+    setMessageText(text);
+
+    // Simulate showing typing indicator from other party
+    // In a real app, you'd emit a typing event to the backend
+    if (text.length > 0 && !isTyping) {
+      // Randomly show typing indicator (30% chance) to simulate other party typing
+      if (Math.random() > 0.7) {
+        setIsTyping(true);
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+        }
+        typingTimeoutRef.current = setTimeout(() => {
+          setIsTyping(false);
+        }, 3000);
+      }
+    }
+  };
+
   const Header = () => (
     <View
       style={{
@@ -425,10 +458,36 @@ export default function MessageDetails() {
         style={{
           flexDirection: 'row',
           justifyContent: isUser ? 'flex-end' : 'flex-start',
+          alignItems: 'flex-start',
           paddingHorizontal: theme.spacing.lg,
           marginBottom: theme.spacing.md,
         }}
       >
+        {!isUser && (
+          <View
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 16,
+              backgroundColor: theme.colors.primary.teal,
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginRight: theme.spacing.sm,
+              marginTop: 2,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: theme.typography.sizes.xs,
+                fontFamily: theme.typography.fonts.bold,
+                color: theme.colors.neutral.white,
+              }}
+            >
+              {companyData?.initial || '??'}
+            </Text>
+          </View>
+        )}
+
         <TouchableOpacity
           onPress={() => isFile && handleFileOpen(item)}
           disabled={!isFile}
@@ -659,26 +718,64 @@ export default function MessageDetails() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView
-          contentContainerStyle={{
-            flexGrow: 1,
+        <View
+          style={{
+            flex: 1,
             justifyContent: 'center',
             alignItems: 'center',
           }}
-          maximumZoomScale={3}
-          minimumZoomScale={1}
         >
           {viewerFile?.type === 'image' && (
-            <Image
-              source={{ uri: viewerFile.url }}
-              style={{
-                width: width,
-                height: height * 0.8,
-              }}
-              resizeMode="contain"
-            />
+            <>
+              <Image
+                source={{ uri: viewerFile.url }}
+                style={{
+                  width: width,
+                  height: height * 0.8,
+                }}
+                resizeMode="contain"
+                onLoadStart={() => setImageLoading(true)}
+                onLoadEnd={() => setImageLoading(false)}
+                onError={() => {
+                  setImageLoading(false);
+                  setImageError(true);
+                }}
+              />
+              {imageLoading && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                >
+                  <ActivityIndicator size="large" color={theme.colors.neutral.white} />
+                </View>
+              )}
+              {imageError && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Ionicons name="image-outline" size={64} color={theme.colors.neutral.mediumGray} />
+                  <Text
+                    style={{
+                      marginTop: theme.spacing.md,
+                      fontSize: theme.typography.sizes.base,
+                      fontFamily: theme.typography.fonts.medium,
+                      color: theme.colors.neutral.white,
+                    }}
+                  >
+                    Failed to load image
+                  </Text>
+                </View>
+              )}
+            </>
           )}
-        </ScrollView>
+        </View>
       </View>
     </Modal>
   );
@@ -1127,6 +1224,12 @@ export default function MessageDetails() {
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingVertical: theme.spacing.md }}
           showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          maintainVisibleContentPosition={{
+            minIndexForVisible: 0,
+            autoscrollToTopThreshold: 10,
+          }}
           ListFooterComponent={isTyping ? <TypingIndicator /> : null}
         />
 
@@ -1182,7 +1285,7 @@ export default function MessageDetails() {
               >
                 <TextInput
                   value={messageText}
-                  onChangeText={setMessageText}
+                  onChangeText={handleTyping}
                   placeholder="Type your message..."
                   placeholderTextColor={theme.colors.text.placeholder}
                   multiline

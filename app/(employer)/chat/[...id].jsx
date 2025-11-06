@@ -21,7 +21,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 
 const { width, height } = Dimensions.get("window");
@@ -30,6 +30,7 @@ export default function EmployerChatDetails() {
   const receivedData = useLocalSearchParams();
   const [messageText, setMessageText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const typingTimeoutRef = useRef(null);
   const [showOptions, setShowOptions] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
@@ -37,12 +38,15 @@ export default function EmployerChatDetails() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(true);
   const [conversationId, setConversationId] = useState(receivedData.id[2]);
   const flatListRef = useRef(null);
+  const [isNearBottom, setIsNearBottom] = useState(true);
   const id = receivedData.id[0];
   const applicationId = receivedData.id[1];
 
   // File viewer state
   const [showFileViewer, setShowFileViewer] = useState(false);
   const [viewerFile, setViewerFile] = useState(null);
+  const [imageLoading, setImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
 
   // Dynamic data from API
   const [candidateData, setCandidateData] = useState(null);
@@ -95,8 +99,8 @@ export default function EmployerChatDetails() {
           setIsBlocked(result.data.conversation.status === "blocked");
         }
 
-        // Only scroll if it's initial load OR genuinely new message arrived
-        if (hasNewMessages) {
+        // Only scroll if it's initial load OR (genuinely new message arrived AND user is near bottom)
+        if (hasNewMessages && (showLoader || isNearBottom)) {
           setTimeout(() => {
             if (flatListRef.current) {
               flatListRef.current.scrollToEnd({ animated: !showLoader });
@@ -116,6 +120,15 @@ export default function EmployerChatDetails() {
     return parts.length >= 2
       ? (parts[0][0] + parts[1][0]).toUpperCase()
       : name?.substring(0, 2).toUpperCase() || "NA";
+  };
+
+  const handleScroll = (event) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom =
+      contentSize.height - (contentOffset.y + layoutMeasurement.height);
+
+    // Consider user "near bottom" if within 100px of the bottom
+    setIsNearBottom(distanceFromBottom < 100);
   };
 
   /**
@@ -191,6 +204,8 @@ export default function EmployerChatDetails() {
 
       if (fileType === "image") {
         // Show image in modal viewer
+        setImageLoading(true);
+        setImageError(false);
         setViewerFile({
           type: "image",
           url: fullUrl,
@@ -353,6 +368,95 @@ export default function EmployerChatDetails() {
     }
   };
 
+  const handleTyping = (text) => {
+    setMessageText(text);
+
+    // Simulate showing typing indicator from other party
+    // In a real app, you'd emit a typing event to the backend
+    if (text.length > 0 && !isTyping) {
+      // Randomly show typing indicator (30% chance) to simulate other party typing
+      if (Math.random() > 0.7) {
+        setIsTyping(true);
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+        }
+        typingTimeoutRef.current = setTimeout(() => {
+          setIsTyping(false);
+        }, 3000);
+      }
+    }
+  };
+
+  const TypingIndicator = () => (
+    <View
+      style={{
+        flexDirection: "row",
+        justifyContent: "flex-start",
+        paddingHorizontal: theme.spacing.lg,
+        marginBottom: theme.spacing.md,
+      }}
+    >
+      <View
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          backgroundColor: theme.colors.primary.teal,
+          justifyContent: "center",
+          alignItems: "center",
+          marginRight: theme.spacing.sm,
+          marginTop: 2,
+        }}
+      >
+        <Text
+          style={{
+            fontSize: theme.typography.sizes.xs,
+            fontFamily: theme.typography.fonts.bold,
+            color: theme.colors.neutral.white,
+          }}
+        >
+          {candidateData?.initial || "NA"}
+        </Text>
+      </View>
+      <View
+        style={{
+          backgroundColor: theme.colors.background.card,
+          borderRadius: theme.borderRadius.lg,
+          padding: theme.spacing.md,
+          borderBottomLeftRadius: 4,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: theme.spacing.xs,
+        }}
+      >
+        <View
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: theme.colors.text.tertiary,
+          }}
+        />
+        <View
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: theme.colors.text.tertiary,
+          }}
+        />
+        <View
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: theme.colors.text.tertiary,
+          }}
+        />
+      </View>
+    </View>
+  );
+
   const Header = () => (
     <View
       style={{
@@ -471,6 +575,7 @@ export default function EmployerChatDetails() {
         style={{
           flexDirection: "row",
           justifyContent: isOwnMessage ? "flex-end" : "flex-start",
+          alignItems: "flex-start",
           paddingHorizontal: theme.spacing.lg,
           marginBottom: theme.spacing.md,
         }}
@@ -485,6 +590,7 @@ export default function EmployerChatDetails() {
               justifyContent: "center",
               alignItems: "center",
               marginRight: theme.spacing.sm,
+              marginTop: 2,
             }}
           >
             <Text
@@ -501,7 +607,7 @@ export default function EmployerChatDetails() {
 
         <View
           style={{
-            maxWidth: "75%",
+            maxWidth: width * 0.75,
             backgroundColor: isOwnMessage
               ? theme.colors.primary.teal
               : theme.colors.background.card,
@@ -509,6 +615,11 @@ export default function EmployerChatDetails() {
             padding: theme.spacing.md,
             borderBottomRightRadius: isOwnMessage ? 4 : theme.borderRadius.lg,
             borderBottomLeftRadius: isOwnMessage ? theme.borderRadius.lg : 4,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.1,
+            shadowRadius: 2,
+            elevation: 2,
           }}
         >
           {item.type === "file" ? (
@@ -624,7 +735,7 @@ export default function EmployerChatDetails() {
       <View
         style={{
           flex: 1,
-          backgroundColor: "rgba(0,0,0,0.9)",
+          backgroundColor: "rgba(0,0,0,0.95)",
         }}
       >
         <View
@@ -634,6 +745,7 @@ export default function EmployerChatDetails() {
             alignItems: "center",
             paddingHorizontal: theme.spacing.lg,
             paddingVertical: theme.spacing.md,
+            paddingTop: Platform.OS === 'ios' ? theme.spacing.xxl : theme.spacing.lg,
           }}
         >
           <Text
@@ -651,12 +763,13 @@ export default function EmployerChatDetails() {
             onPress={() => setShowFileViewer(false)}
             style={{
               padding: theme.spacing.sm,
+              marginLeft: theme.spacing.md,
             }}
             activeOpacity={0.7}
           >
             <Ionicons
               name="close"
-              size={24}
+              size={28}
               color={theme.colors.neutral.white}
             />
           </TouchableOpacity>
@@ -670,14 +783,54 @@ export default function EmployerChatDetails() {
           }}
         >
           {viewerFile?.type === "image" && (
-            <Image
-              source={{ uri: viewerFile.url }}
-              style={{
-                width: width,
-                height: height * 0.8,
-              }}
-              resizeMode="contain"
-            />
+            <>
+              <Image
+                source={{ uri: viewerFile?.url }}
+                style={{
+                  width: width,
+                  height: height * 0.8,
+                }}
+                resizeMode="contain"
+                onLoadStart={() => setImageLoading(true)}
+                onLoadEnd={() => setImageLoading(false)}
+                onError={() => {
+                  setImageLoading(false);
+                  setImageError(true);
+                }}
+              />
+              {imageLoading && (
+                <View
+                  style={{
+                    position: "absolute",
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <ActivityIndicator size="large" color={theme.colors.neutral.white} />
+                </View>
+              )}
+              {imageError && (
+                <View
+                  style={{
+                    position: "absolute",
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Ionicons name="image-outline" size={64} color={theme.colors.neutral.mediumGray} />
+                  <Text
+                    style={{
+                      marginTop: theme.spacing.md,
+                      fontSize: theme.typography.sizes.base,
+                      fontFamily: theme.typography.fonts.medium,
+                      color: theme.colors.neutral.white,
+                    }}
+                  >
+                    Failed to load image
+                  </Text>
+                </View>
+              )}
+            </>
           )}
         </View>
       </View>
@@ -922,6 +1075,13 @@ export default function EmployerChatDetails() {
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingVertical: theme.spacing.md }}
             showsVerticalScrollIndicator={false}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            maintainVisibleContentPosition={{
+              minIndexForVisible: 0,
+              autoscrollToTopThreshold: 10,
+            }}
+            ListFooterComponent={isTyping ? <TypingIndicator /> : null}
           />
 
           {!isBlocked && (
@@ -976,7 +1136,7 @@ export default function EmployerChatDetails() {
                 >
                   <TextInput
                     value={messageText}
-                    onChangeText={setMessageText}
+                    onChangeText={handleTyping}
                     placeholder="Type your message..."
                     placeholderTextColor={theme.colors.text.placeholder}
                     multiline

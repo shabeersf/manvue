@@ -2,12 +2,12 @@ import theme from '@/theme';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import {
-  ActivityIndicator,
-  Modal,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Modal,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 const EditModal = ({
@@ -214,7 +214,7 @@ const EditModal = ({
                   fontStyle: 'italic',
                 }}
               >
-                💡 Tip: Use commas to separate skills (e.g., JavaScript, React, Node.js)
+                💡 Tip: Use commas to separate skills (eg: JavaScript, React, Node.js)
               </Text>
             </View>
           )}

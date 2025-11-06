@@ -1,12 +1,12 @@
-import CompanyEditModal from '@/components/CompanyEditModal';
-import CustomDropdown from '@/components/CustomDropdown';
-import apiService from '@/services/apiService';
-import theme from '@/theme';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
-import React, { useEffect, useState } from 'react';
+import CompanyEditModal from "@/components/CompanyEditModal";
+import CustomDropdown from "@/components/CustomDropdown";
+import apiService from "@/services/apiService";
+import theme from "@/theme";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
+import * as SecureStore from "expo-secure-store";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,20 +18,28 @@ import {
   Text,
   TouchableOpacity,
   View,
-} from 'react-native';
+} from "react-native";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 
 export default function CompanyProfile() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingField, setEditingField] = useState(null);
-  const [editingValue, setEditingValue] = useState('');
+  const [editingValue, setEditingValue] = useState("");
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [updating, setUpdating] = useState(false);
-  const [updateError, setUpdateError] = useState('');
-  const [updateSuccess, setUpdateSuccess] = useState('');
+  const [updateError, setUpdateError] = useState("");
+  const [updateSuccess, setUpdateSuccess] = useState("");
+
+  // ✅ NEW: Pending approvals state
+  const [pendingApprovals, setPendingApprovals] = useState({
+    count: 0,
+    has_pending: false,
+    requests: [],
+  });
+  const [showPendingModal, setShowPendingModal] = useState(false);
 
   // User credentials
   const [userId, setUserId] = useState(null);
@@ -79,32 +87,32 @@ export default function CompanyProfile() {
   // Company profile data
   const [companyProfile, setCompanyProfile] = useState({
     // Basic Info
-    companyName: '',
-    industry: '',
-    companySize: '',
-    companyType: '',
-    foundedYear: '',
-    website: '',
-    gst_number: '',
+    companyName: "",
+    industry: "",
+    companySize: "",
+    companyType: "",
+    foundedYear: "",
+    website: "",
+    gst_number: "",
     gstVerified: false,
-    location_city: '',
-    location_state: '',
-    headquarters: '',
+    location_city: "",
+    location_state: "",
+    headquarters: "",
 
     // Contact Person Info
-    firstName: '',
-    lastName: '',
-    gender: '',
-    email: '',
-    phone: '',
-    address: '',
+    firstName: "",
+    lastName: "",
+    gender: "",
+    email: "",
+    phone: "",
+    address: "",
 
     // Company Details
-    description: '',
+    description: "",
 
     // Subscription & Account
-    accountStatus: '',
-    joinDate: '',
+    accountStatus: "",
+    joinDate: "",
     totalJobsPosted: 0,
     totalHires: 0,
 
@@ -123,8 +131,8 @@ export default function CompanyProfile() {
 
   const loadUserData = async () => {
     try {
-      const storedUserId = await SecureStore.getItemAsync('user_id');
-      const storedCompanyId = await SecureStore.getItemAsync('company_id');
+      const storedUserId = await SecureStore.getItemAsync("user_id");
+      const storedCompanyId = await SecureStore.getItemAsync("company_id");
 
       if (storedUserId) {
         setUserId(parseInt(storedUserId));
@@ -137,11 +145,11 @@ export default function CompanyProfile() {
       if (storedUserId) {
         await fetchCompanyProfile(storedUserId, storedCompanyId);
       } else {
-        Alert.alert('Error', 'User not logged in');
-        router.replace('/choose-path');
+        Alert.alert("Error", "User not logged in");
+        router.replace("/choose-path");
       }
     } catch (error) {
-      console.error('Error loading user data:', error);
+      console.error("Error loading user data:", error);
       setLoading(false);
     }
   };
@@ -159,37 +167,40 @@ export default function CompanyProfile() {
         // Set company ID if not already set
         if (!companyId && data.company_id) {
           setCompanyId(data.company_id);
-          await SecureStore.setItemAsync('company_id', data.company_id.toString());
+          await SecureStore.setItemAsync(
+            "company_id",
+            data.company_id.toString()
+          );
         }
 
         setCompanyProfile({
           // Basic Info
-          companyName: data.company_name || '',
-          industry: data.industry || '',
-          companySize: data.company_size || '',
-          companyType: data.company_type || '',
-          foundedYear: data.founded_year ? data.founded_year.toString() : '',
-          website: data.company_website || '',
-          gst_number: data.gst_number || '',
+          companyName: data.company_name || "",
+          industry: data.industry || "",
+          companySize: data.company_size || "",
+          companyType: data.company_type || "",
+          foundedYear: data.founded_year ? data.founded_year.toString() : "",
+          website: data.company_website || "",
+          gst_number: data.gst_number || "",
           gstVerified: data.gst_verified || false,
-          location_city: data.location_city || '',
-          location_state: data.location_state || '',
-          headquarters: data.headquarters || '',
+          location_city: data.location_city || "",
+          location_state: data.location_state || "",
+          headquarters: data.headquarters || "",
 
           // Contact Person Info
-          firstName: data.first_name || '',
-          lastName: data.last_name || '',
-          // gender: data.gender || '',
-          email: data.email || '',
-          phone: data.phone || '',
-          address: data.headquarters_address || '',
+          firstName: data.first_name || "",
+          lastName: data.last_name || "",
+          gender: data.gender || "",
+          email: data.email || "",
+          phone: data.phone || "",
+          address: data.headquarters_address || "",
 
           // Company Details
-          description: data.company_description || '',
+          description: data.company_description || "",
 
           // Subscription & Account
-          accountStatus: data.status || '',
-          joinDate: data.created_at || '',
+          accountStatus: data.account_status || "",
+          joinDate: data.created_at || "",
 
           // Statistics
           statistics: data.statistics || {
@@ -203,14 +214,22 @@ export default function CompanyProfile() {
           user_id: data.user_id,
         });
 
+        // ✅ NEW: Set pending approvals data
+        if (data.pending_approvals) {
+          setPendingApprovals(data.pending_approvals);
+        }
+
         setLoading(false);
       } else {
-        Alert.alert('Error', response.message || 'Failed to load company profile');
+        Alert.alert(
+          "Error",
+          response.message || "Failed to load company profile"
+        );
         setLoading(false);
       }
     } catch (error) {
-      console.error('Error fetching company profile:', error);
-      Alert.alert('Error', 'Failed to load company profile');
+      console.error("Error fetching company profile:", error);
+      Alert.alert("Error", "Failed to load company profile");
       setLoading(false);
     }
   };
@@ -224,13 +243,13 @@ export default function CompanyProfile() {
 
   const handleEditField = (field, currentValue) => {
     setEditingField(field);
-    setEditingValue(currentValue || '');
+    setEditingValue(currentValue || "");
     setShowEditModal(true);
   };
 
   const handleSaveField = async (value, fieldName = editingField) => {
     if (!value || !value.toString().trim()) {
-      Alert.alert('Error', 'Value cannot be empty');
+      Alert.alert("Error", "Value cannot be empty");
       return;
     }
 
@@ -245,29 +264,55 @@ export default function CompanyProfile() {
       );
 
       if (response.success) {
-        // Update local state
-        setCompanyProfile(prev => ({
-          ...prev,
-          [fieldName]: value.toString().trim()
-        }));
+        // Check if it requires approval
+        if (response.requires_approval) {
+          Alert.alert(
+            "Submitted for Approval",
+            response.message ||
+              "Your change has been submitted for admin approval",
+            [
+              {
+                text: "OK",
+                onPress: () => {
+                  setShowEditModal(false);
+                  setEditingField(null);
+                  setEditingValue("");
+                  // Refresh to get updated pending requests
+                  fetchCompanyProfile(userId, companyId);
+                },
+              },
+            ]
+          );
+        } else {
+          // Update local state for immediate updates
+          setCompanyProfile((prev) => ({
+            ...prev,
+            [fieldName]: value.toString().trim(),
+          }));
 
-        Alert.alert('Success', response.message || 'Company profile updated successfully');
+          Alert.alert(
+            "Success",
+            response.message || "Company profile updated successfully"
+          );
 
-        setShowEditModal(false);
-        setEditingField(null);
-        setEditingValue('');
+          setShowEditModal(false);
+          setEditingField(null);
+          setEditingValue("");
 
-        // Refresh data to get latest from server
-        await fetchCompanyProfile(userId, companyId);
+          // Refresh data to get latest from server
+          await fetchCompanyProfile(userId, companyId);
+        }
       } else {
         Alert.alert(
-          'Error',
-          response.errors?.join(', ') || response.message || 'Failed to update company profile'
+          "Error",
+          response.errors?.join(", ") ||
+            response.message ||
+            "Failed to update company profile"
         );
       }
     } catch (error) {
-      console.error('Error updating company field:', error);
-      Alert.alert('Error', 'Failed to update company profile');
+      console.error("Error updating company field:", error);
+      Alert.alert("Error", "Failed to update company profile");
     } finally {
       setUpdating(false);
     }
@@ -276,7 +321,7 @@ export default function CompanyProfile() {
   const handleCloseEditModal = () => {
     setShowEditModal(false);
     setEditingField(null);
-    setEditingValue('');
+    setEditingValue("");
   };
 
   const handleLogout = async () => {
@@ -286,14 +331,14 @@ export default function CompanyProfile() {
       const response = await apiService.logout();
 
       if (response.success) {
-        router.replace('/choose-path');
+        router.replace("/choose-path");
       } else {
-        Alert.alert('Error', 'Logout failed');
+        Alert.alert("Error", "Logout failed");
       }
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error("Logout error:", error);
       // Even if logout API fails, clear local data and redirect
-      router.replace('/choose-path');
+      router.replace("/choose-path");
     }
   };
 
@@ -309,16 +354,79 @@ export default function CompanyProfile() {
         borderBottomColor: theme.colors.border.light,
       }}
     >
+      {/* ✅ NEW: Pending Approvals Banner */}
+      {pendingApprovals.has_pending && (
+        <TouchableOpacity
+          onPress={() => setShowPendingModal(true)}
+          style={{
+            backgroundColor: "rgba(255, 152, 0, 0.1)",
+            borderRadius: theme.borderRadius.lg,
+            padding: theme.spacing.md,
+            marginBottom: theme.spacing.lg,
+            borderLeftWidth: 4,
+            borderLeftColor: theme.colors.primary.orange,
+          }}
+          activeOpacity={0.8}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <View
+              style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
+            >
+              <Ionicons
+                name="time-outline"
+                size={20}
+                color={theme.colors.primary.orange}
+                style={{ marginRight: theme.spacing.sm }}
+              />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.sm,
+                    fontFamily: theme.typography.fonts.semiBold,
+                    color: theme.colors.primary.orange,
+                  }}
+                >
+                  {pendingApprovals.count}{" "}
+                  {pendingApprovals.count === 1 ? "Change" : "Changes"} Pending
+                  Approval
+                </Text>
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.regular,
+                    color: theme.colors.text.secondary,
+                    marginTop: 2,
+                  }}
+                >
+                  Tap to view details
+                </Text>
+              </View>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={theme.colors.primary.orange}
+            />
+          </View>
+        </TouchableOpacity>
+      )}
+
       {/* Company Logo and Basic Info */}
-      <View style={{ alignItems: 'center', marginBottom: theme.spacing.lg }}>
+      <View style={{ alignItems: "center", marginBottom: theme.spacing.lg }}>
         <View
           style={{
             width: 80,
             height: 80,
             borderRadius: 40,
             backgroundColor: theme.colors.primary.teal,
-            justifyContent: 'center',
-            alignItems: 'center',
+            justifyContent: "center",
+            alignItems: "center",
             marginBottom: theme.spacing.md,
             borderWidth: 3,
             borderColor: theme.colors.background.accent,
@@ -331,7 +439,7 @@ export default function CompanyProfile() {
               color: theme.colors.neutral.white,
             }}
           >
-            {companyProfile.companyName.charAt(0) || 'C'}
+            {companyProfile.companyName.charAt(0) || "C"}
           </Text>
         </View>
 
@@ -343,7 +451,7 @@ export default function CompanyProfile() {
             marginBottom: theme.spacing.xs,
           }}
         >
-          {companyProfile.companyName || 'Company Name'}
+          {companyProfile.companyName || "Company Name"}
         </Text>
 
         <Text
@@ -354,11 +462,11 @@ export default function CompanyProfile() {
             marginBottom: theme.spacing.xs,
           }}
         >
-          {companyProfile.industry || 'Industry'}
+          {companyProfile.industry || "Industry"}
         </Text>
 
-        {companyProfile.accountStatus === 'active' && (
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        {companyProfile.accountStatus == "active" ? (
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
             <Ionicons
               name="checkmark-circle"
               size={16}
@@ -375,13 +483,146 @@ export default function CompanyProfile() {
               Verified Company
             </Text>
           </View>
+        ) : (
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Ionicons
+              name="time-outline"
+              size={16}
+              color={theme.colors.status.warning}
+              style={{ marginRight: theme.spacing.xs }}
+            />
+            <Text
+              style={{
+                fontSize: theme.typography.sizes.sm,
+                fontFamily: theme.typography.fonts.regular,
+                color: theme.colors.status.warning,
+              }}
+            >
+              Verification Pending
+            </Text>
+          </View>
         )}
       </View>
+      <View>
+        {pendingApprovals.requests.length > 0 &&
+          pendingApprovals.requests.map((request, index) => (
+            <View
+              key={request.request_id}
+              style={{
+                backgroundColor: theme.colors.background.accent,
+                borderRadius: theme.borderRadius.lg,
+                padding: theme.spacing.md,
+                marginBottom: theme.spacing.md,
+                borderLeftWidth: 4,
+                borderLeftColor: theme.colors.primary.orange,
+              }}
+            >
+              {/* Field Name Badge */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: theme.spacing.sm,
+                }}
+              >
+                <View
+                  style={{
+                    backgroundColor: theme.colors.primary.deepBlue,
+                    paddingHorizontal: theme.spacing.sm,
+                    paddingVertical: 4,
+                    borderRadius: theme.borderRadius.sm,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: theme.typography.sizes.xs,
+                      fontFamily: theme.typography.fonts.semiBold,
+                      color: theme.colors.neutral.white,
+                    }}
+                  >
+                    {request.field_label} 1
+                  </Text>
+                </View>
 
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.regular,
+                    color: theme.colors.text.tertiary,
+                  }}
+                >
+                  {new Date(request.submitted_at).toLocaleDateString()}
+                </Text>
+              </View>
+
+              {/* Current Value */}
+              <View style={{ marginBottom: theme.spacing.sm }}>
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.medium,
+                    color: theme.colors.text.secondary,
+                    marginBottom: 4,
+                  }}
+                >
+                  Current:
+                </Text>
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.sm,
+                    fontFamily: theme.typography.fonts.regular,
+                    color: theme.colors.status.error,
+                    textDecorationLine: "line-through",
+                  }}
+                >
+                  {request.current_value || "Empty"}
+                </Text>
+              </View>
+
+              {/* Arrow */}
+              <View
+                style={{
+                  alignItems: "center",
+                  marginVertical: theme.spacing.xs,
+                }}
+              >
+                <Ionicons
+                  name="arrow-down"
+                  size={16}
+                  color={theme.colors.text.tertiary}
+                />
+              </View>
+
+              {/* New Value */}
+              <View>
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.medium,
+                    color: theme.colors.text.secondary,
+                    marginBottom: 4,
+                  }}
+                >
+                  Requested Change:
+                </Text>
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.base,
+                    fontFamily: theme.typography.fonts.semiBold,
+                    color: theme.colors.status.success,
+                  }}
+                >
+                  {request.new_value}
+                </Text>
+              </View>
+            </View>
+          ))}
+      </View>
       {/* Company Stats */}
       <View
         style={{
-          flexDirection: 'row',
+          flexDirection: "row",
           gap: theme.spacing.sm,
         }}
       >
@@ -391,7 +632,7 @@ export default function CompanyProfile() {
             backgroundColor: theme.colors.background.accent,
             borderRadius: theme.borderRadius.lg,
             padding: theme.spacing.md,
-            alignItems: 'center',
+            alignItems: "center",
           }}
         >
           <Text
@@ -420,7 +661,7 @@ export default function CompanyProfile() {
             backgroundColor: theme.colors.background.accent,
             borderRadius: theme.borderRadius.lg,
             padding: theme.spacing.md,
-            alignItems: 'center',
+            alignItems: "center",
           }}
         >
           <Text
@@ -449,7 +690,7 @@ export default function CompanyProfile() {
             backgroundColor: theme.colors.background.accent,
             borderRadius: theme.borderRadius.lg,
             padding: theme.spacing.md,
-            alignItems: 'center',
+            alignItems: "center",
           }}
         >
           <Text
@@ -478,12 +719,12 @@ export default function CompanyProfile() {
   // Helper function to get icon for field
   const getIconForField = (field) => {
     const iconMap = {
-      gender: 'person-outline',
-      industry: 'business-outline',
-      companySize: 'people-outline',
-      companyType: 'business-outline',
+      gender: "person-outline",
+      industry: "business-outline",
+      companySize: "people-outline",
+      companyType: "business-outline",
     };
-    return iconMap[field] || 'list-outline';
+    return iconMap[field] || "list-outline";
   };
 
   // Section Component
@@ -501,8 +742,8 @@ export default function CompanyProfile() {
     >
       <View
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
+          flexDirection: "row",
+          alignItems: "center",
           marginBottom: theme.spacing.md,
         }}
       >
@@ -529,9 +770,16 @@ export default function CompanyProfile() {
   );
 
   // Field Item Component
-  const FieldItem = ({ label, value, field, editable = true, fieldType = 'text', options = [] }) => {
+  const FieldItem = ({
+    label,
+    value,
+    field,
+    editable = true,
+    fieldType = "text",
+    options = [],
+  }) => {
     // If it's a dropdown field, use CustomDropdown
-    if (fieldType === 'dropdown') {
+    if (fieldType === "dropdown") {
       return (
         <View
           style={{
@@ -558,9 +806,9 @@ export default function CompanyProfile() {
     return (
       <View
         style={{
-          flexDirection: 'row',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
+          flexDirection: "row",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
           paddingVertical: theme.spacing.sm,
           borderBottomWidth: 1,
           borderBottomColor: theme.colors.border.light,
@@ -586,7 +834,7 @@ export default function CompanyProfile() {
               lineHeight: theme.typography.sizes.base * 1.3,
             }}
           >
-            {value || 'Not provided'}
+            {value || "Not provided"}
           </Text>
         </View>
 
@@ -622,9 +870,9 @@ export default function CompanyProfile() {
       <View
         style={{
           flex: 1,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          justifyContent: 'center',
-          alignItems: 'center',
+          backgroundColor: "rgba(0, 0, 0, 0.5)",
+          justifyContent: "center",
+          alignItems: "center",
           paddingHorizontal: theme.spacing.lg,
         }}
       >
@@ -632,20 +880,22 @@ export default function CompanyProfile() {
           style={{
             backgroundColor: theme.colors.background.card,
             borderRadius: theme.borderRadius.xl,
-            width: '100%',
+            width: "100%",
             maxWidth: 350,
             padding: theme.spacing.xl,
           }}
         >
-          <View style={{ alignItems: 'center', marginBottom: theme.spacing.lg }}>
+          <View
+            style={{ alignItems: "center", marginBottom: theme.spacing.lg }}
+          >
             <View
               style={{
                 width: 60,
                 height: 60,
                 borderRadius: 30,
                 backgroundColor: theme.colors.status.error,
-                justifyContent: 'center',
-                alignItems: 'center',
+                justifyContent: "center",
+                alignItems: "center",
                 marginBottom: theme.spacing.md,
               }}
             >
@@ -662,7 +912,7 @@ export default function CompanyProfile() {
                 fontFamily: theme.typography.fonts.bold,
                 color: theme.colors.text.primary,
                 marginBottom: theme.spacing.xs,
-                textAlign: 'center',
+                textAlign: "center",
               }}
             >
               Logout
@@ -672,14 +922,14 @@ export default function CompanyProfile() {
                 fontSize: theme.typography.sizes.base,
                 fontFamily: theme.typography.fonts.regular,
                 color: theme.colors.text.secondary,
-                textAlign: 'center',
+                textAlign: "center",
               }}
             >
               Are you sure you want to logout?
             </Text>
           </View>
 
-          <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
+          <View style={{ flexDirection: "row", gap: theme.spacing.md }}>
             <TouchableOpacity
               onPress={() => setShowLogoutModal(false)}
               style={{
@@ -687,7 +937,7 @@ export default function CompanyProfile() {
                 backgroundColor: theme.colors.neutral.lightGray,
                 borderRadius: theme.borderRadius.lg,
                 paddingVertical: theme.spacing.md,
-                alignItems: 'center',
+                alignItems: "center",
               }}
               activeOpacity={0.8}
             >
@@ -709,7 +959,7 @@ export default function CompanyProfile() {
                 backgroundColor: theme.colors.status.error,
                 borderRadius: theme.borderRadius.lg,
                 paddingVertical: theme.spacing.md,
-                alignItems: 'center',
+                alignItems: "center",
               }}
               activeOpacity={0.9}
             >
@@ -732,9 +982,22 @@ export default function CompanyProfile() {
   // Loading state
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background.primary }}>
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: theme.colors.background.primary,
+        }}
+      >
         <ActivityIndicator size="large" color={theme.colors.primary.teal} />
-        <Text style={{ marginTop: theme.spacing.md, fontSize: theme.typography.sizes.base, color: theme.colors.text.secondary }}>
+        <Text
+          style={{
+            marginTop: theme.spacing.md,
+            fontSize: theme.typography.sizes.base,
+            color: theme.colors.text.secondary,
+          }}
+        >
           Loading company profile...
         </Text>
       </View>
@@ -751,11 +1014,11 @@ export default function CompanyProfile() {
       <LinearGradient
         colors={[
           theme.colors.background.accent,
-          'rgba(27, 163, 163, 0.02)',
+          "rgba(27, 163, 163, 0.02)",
           theme.colors.background.primary,
         ]}
         style={{
-          position: 'absolute',
+          position: "absolute",
           left: 0,
           right: 0,
           top: 0,
@@ -778,7 +1041,7 @@ export default function CompanyProfile() {
         }
       >
         <Header />
-
+        <View style={{ marginTop: 14 }} />
         {/* Company Information */}
         <Section title="Company Information" icon="business-outline">
           <FieldItem
@@ -819,9 +1082,9 @@ export default function CompanyProfile() {
           />
           <View
             style={{
-              flexDirection: 'row',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
+              flexDirection: "row",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
               paddingVertical: theme.spacing.sm,
               borderBottomWidth: 1,
               borderBottomColor: theme.colors.border.light,
@@ -839,7 +1102,7 @@ export default function CompanyProfile() {
               >
                 GST Number
               </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <Text
                   style={{
                     fontSize: theme.typography.sizes.base,
@@ -849,13 +1112,13 @@ export default function CompanyProfile() {
                     marginRight: theme.spacing.sm,
                   }}
                 >
-                  {companyProfile.gst_number || 'Not provided'}
+                  {companyProfile.gst_number || "Not provided"}
                 </Text>
                 {companyProfile.gstVerified && (
                   <View
                     style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
+                      flexDirection: "row",
+                      alignItems: "center",
                       backgroundColor: theme.colors.status.success,
                       paddingHorizontal: theme.spacing.xs,
                       paddingVertical: 2,
@@ -882,7 +1145,9 @@ export default function CompanyProfile() {
               </View>
             </View>
             <TouchableOpacity
-              onPress={() => handleEditField('gst_number', companyProfile.gst_number)}
+              onPress={() =>
+                handleEditField("gst_number", companyProfile.gst_number)
+              }
               style={{
                 padding: theme.spacing.sm,
                 borderRadius: theme.borderRadius.sm,
@@ -921,7 +1186,8 @@ export default function CompanyProfile() {
             value={companyProfile.lastName}
             field="lastName"
           />
-        {/*    <FieldItem
+          {/* Uncomment if you want to enable gender field
+          <FieldItem
             label="Gender"
             value={companyProfile.gender}
             field="gender"
@@ -958,15 +1224,13 @@ export default function CompanyProfile() {
           />
         </Section>
 
-      
-
         {/* Account Actions */}
         <Section title="Account Actions" icon="cog-outline">
           <TouchableOpacity
             onPress={() => setShowLogoutModal(true)}
             style={{
-              flexDirection: 'row',
-              alignItems: 'center',
+              flexDirection: "row",
+              alignItems: "center",
               paddingVertical: theme.spacing.md,
             }}
             activeOpacity={0.8}
@@ -1014,6 +1278,7 @@ export default function CompanyProfile() {
         initialValue={editingValue}
         updating={updating}
       />
+
       <LogoutModal />
     </View>
   );

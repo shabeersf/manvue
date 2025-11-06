@@ -1,11 +1,16 @@
 import apiService from '@/services/apiService';
 import theme from '@/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import * as SecureStore from 'expo-secure-store';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Dimensions,
   FlatList,
+  Image,
   RefreshControl,
   Text,
   TextInput,
@@ -13,73 +18,122 @@ import {
   View,
 } from 'react-native';
 
-export default function Messages() {
-  const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'unread', 'blocked'
-  const [messages, setMessages] = useState([]);
-  const [filterCounts, setFilterCounts] = useState({
-    all: 0,
-    unread: 0,
-    blocked: 0,
-  });
-  const [isLoading, setIsLoading] = useState(true);
+const { width } = Dimensions.get('window');
 
-  // Fetch conversations on mount and filter change
+export default function Matches() {
+  const [refreshing, setRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'pending', 'accepted', 'rejected'
+  const [jobseekerId, setJobseekerId] = useState(null);
+  
+  // Data states
+  const [matches, setMatches] = useState([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    accepted: 0,
+    rejected: 0,
+  });
+  const [pagination, setPagination] = useState({
+    total: 0,
+    limit: 50,
+    offset: 0,
+    has_more: false,
+  });
+
+  // Load user data
   useEffect(() => {
-    fetchConversations();
-  }, [activeFilter]);
+    loadUserData();
+  }, []);
+
+  // Load proposals when user data is available or filter changes
+  useEffect(() => {
+    if (jobseekerId) {
+      loadProposals();
+    }
+  }, [jobseekerId, activeFilter]);
 
   // Debounced search
   useEffect(() => {
+    if (!jobseekerId) return;
+    
     const timer = setTimeout(() => {
       if (searchQuery !== undefined) {
-        fetchConversations();
+        loadProposals();
       }
     }, 500);
 
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const fetchConversations = async (showLoader = true) => {
+  const loadUserData = async () => {
     try {
-      if (showLoader) setIsLoading(true);
-
-      const result = await apiService.getJobseekerChatList(
-        searchQuery,
-        activeFilter,
-        50,
-        0
-      );
-
-      if (result.success) {
-        setMessages(result.data.conversations || []);
-        setFilterCounts(result.data.filter_counts || {
-          all: 0,
-          unread: 0,
-          blocked: 0,
-        });
+      const userId = await SecureStore.getItemAsync('user_id');
+      
+      if (userId) {
+        setJobseekerId(userId);
       } else {
-        console.error('Error fetching conversations:', result.message);
-        setMessages([]);
+        Alert.alert('Error', 'User session not found. Please login again.');
+        router.replace('/(auth)/login');
       }
     } catch (error) {
-      console.error('Error:', error);
-      setMessages([]);
-    } finally {
-      if (showLoader) setIsLoading(false);
+      console.error('❌ Failed to load user data:', error);
+      Alert.alert('Error', 'Failed to load user data');
     }
   };
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchConversations(false);
-    setRefreshing(false);
+  const loadProposals = async (showLoader = true) => {
+    if (!jobseekerId) return;
+
+    try {
+      if (showLoader) setIsLoading(true);
+
+      const params = {
+        jobseeker_id: parseInt(jobseekerId),
+        status: activeFilter,
+        search_query: searchQuery.trim(),
+        limit: 50,
+        offset: 0,
+      };
+
+      if (__DEV__) {
+        console.log('📤 Loading proposals with params:', params);
+      }
+
+      const response = await apiService.getJobseekerProposals(params);
+
+      if (__DEV__) {
+        console.log('📦 Proposals response:', response);
+      }
+
+      if (response.success) {
+        setMatches(response.data.applications || []);
+        setStats(response.data.stats || { total: 0, pending: 0, accepted: 0, rejected: 0 });
+        setPagination(response.data.pagination || { total: 0, limit: 50, offset: 0, has_more: false });
+      } else {
+        console.error('❌ Failed to load proposals:', response.message);
+        Alert.alert('Error', response.message || 'Failed to load proposals');
+        setMatches([]);
+      }
+    } catch (error) {
+      console.error('❌ Error loading proposals:', error);
+      Alert.alert('Error', 'Failed to load proposals. Please try again.');
+      setMatches([]);
+    } finally {
+      if (showLoader) setIsLoading(false);
+      setRefreshing(false);
+    }
   };
 
-  // Navigate to chat details
-  const handleChatPress = (item) => {
-    router.push(`/message-details/${item.conversation_id}`);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadProposals(false);
+  }, [jobseekerId, activeFilter, searchQuery]);
+
+  // Navigate to job details
+  const handleMatchPress = (item) => {
+    router.push(`/job-details/${item.application_id}`);
   };
 
   // Header Component
@@ -94,6 +148,105 @@ export default function Messages() {
         borderBottomColor: theme.colors.border.light,
       }}
     >
+      {/* Stats Cards */}
+      <View
+        style={{
+          flexDirection: 'row',
+          gap: theme.spacing.sm,
+          marginBottom: theme.spacing.md,
+        }}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: theme.colors.background.accent,
+            borderRadius: theme.borderRadius.lg,
+            padding: theme.spacing.md,
+            alignItems: 'center',
+          }}
+        >
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.xxl,
+              fontFamily: theme.typography.fonts.bold,
+              color: theme.colors.primary.teal,
+            }}
+          >
+            {stats.total}
+          </Text>
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.xs,
+              fontFamily: theme.typography.fonts.medium,
+              color: theme.colors.text.secondary,
+              textAlign: 'center',
+            }}
+          >
+            Total Matches
+          </Text>
+        </View>
+
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: theme.colors.background.accent,
+            borderRadius: theme.borderRadius.lg,
+            padding: theme.spacing.md,
+            alignItems: 'center',
+          }}
+        >
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.xxl,
+              fontFamily: theme.typography.fonts.bold,
+              color: theme.colors.primary.orange,
+            }}
+          >
+            {stats.pending}
+          </Text>
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.xs,
+              fontFamily: theme.typography.fonts.medium,
+              color: theme.colors.text.secondary,
+              textAlign: 'center',
+            }}
+          >
+            Pending
+          </Text>
+        </View>
+
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: theme.colors.background.accent,
+            borderRadius: theme.borderRadius.lg,
+            padding: theme.spacing.md,
+            alignItems: 'center',
+          }}
+        >
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.xxl,
+              fontFamily: theme.typography.fonts.bold,
+              color: theme.colors.status.success,
+            }}
+          >
+            {stats.accepted}
+          </Text>
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.xs,
+              fontFamily: theme.typography.fonts.medium,
+              color: theme.colors.text.secondary,
+              textAlign: 'center',
+            }}
+          >
+            Accepted
+          </Text>
+        </View>
+      </View>
+
       {/* Search Bar */}
       <View
         style={{
@@ -115,7 +268,7 @@ export default function Messages() {
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Search conversations..."
+          placeholder="Search companies or positions..."
           placeholderTextColor={theme.colors.text.placeholder}
           style={{
             flex: 1,
@@ -141,9 +294,10 @@ export default function Messages() {
       {/* Filter Tabs */}
       <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
         {[
-          { id: 'all', label: 'All', count: filterCounts.all },
-          { id: 'unread', label: 'Unread', count: filterCounts.unread },
-          { id: 'blocked', label: 'Blocked', count: filterCounts.blocked },
+          { id: 'all', label: 'All', count: stats.total },
+          { id: 'pending', label: 'Pending', count: stats.pending },
+          { id: 'accepted', label: 'Accepted', count: stats.accepted },
+          { id: 'rejected', label: 'Rejected', count: stats.rejected },
         ].map((filter) => (
           <TouchableOpacity
             key={filter.id}
@@ -204,172 +358,173 @@ export default function Messages() {
     </View>
   );
 
-  // Message Item Component
-  const MessageItem = ({ item }) => (
-    <TouchableOpacity
-      onPress={() => handleChatPress(item)}
-      style={{
-        flexDirection: 'row',
-        padding: theme.spacing.lg,
-        backgroundColor: theme.colors.background.card,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border.light,
-      }}
-      activeOpacity={0.7}
-    >
-      {/* Company Avatar */}
-      <View style={{ marginRight: theme.spacing.md, position: 'relative' }}>
-        <View
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: theme.borderRadius.full,
-            backgroundColor: item.unreadCount > 0 
-              ? theme.colors.primary.teal 
-              : theme.colors.background.accent,
-            justifyContent: 'center',
-            alignItems: 'center',
-            borderWidth: item.unreadCount > 0 ? 2 : 1,
-            borderColor: item.unreadCount > 0 
-              ? theme.colors.primary.teal 
-              : theme.colors.border.light,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.base,
-              fontFamily: theme.typography.fonts.bold,
-              color: item.unreadCount > 0 
-                ? theme.colors.neutral.white 
-                : theme.colors.primary.teal,
-            }}
-          >
-            {item.companyInitial}
-          </Text>
-        </View>
+  // Match Item Component
+  const MatchItem = ({ item }) => {
+    const getStatusColor = () => {
+      switch (item.status) {
+        case 'accepted': return theme.colors.status.success;
+        case 'rejected': return theme.colors.status.error;
+        default: return theme.colors.primary.orange;
+      }
+    };
 
-        {/* Online status */}
-        {item.isOnline && !item.isBlocked && (
-          <View
-            style={{
-              position: 'absolute',
-              bottom: 2,
-              right: 2,
-              width: 12,
-              height: 12,
-              borderRadius: 6,
-              backgroundColor: theme.colors.status.success,
-              borderWidth: 2,
-              borderColor: theme.colors.background.card,
-            }}
-          />
-        )}
+    const getStatusIcon = () => {
+      switch (item.status) {
+        case 'accepted': return 'checkmark-circle';
+        case 'rejected': return 'close-circle';
+        default: return 'time';
+      }
+    };
 
-        {/* Blocked indicator */}
-        {item.isBlocked && (
-          <View
-            style={{
-              position: 'absolute',
-              bottom: 2,
-              right: 2,
-              width: 12,
-              height: 12,
-              borderRadius: 6,
-              backgroundColor: theme.colors.status.error,
-              borderWidth: 2,
-              borderColor: theme.colors.background.card,
-            }}
-          />
-        )}
-      </View>
+    return (
+      <TouchableOpacity
+        onPress={() => handleMatchPress(item)}
+        style={{
+          backgroundColor: theme.colors.background.card,
+          borderRadius: theme.borderRadius.lg,
+          padding: theme.spacing.lg,
+          marginHorizontal: theme.spacing.lg,
+          marginBottom: theme.spacing.md,
+          borderWidth: 1,
+          borderColor: theme.colors.border.light,
+          opacity: item.status === 'rejected' ? 0.7 : 1,
+          ...theme.shadows.sm,
+        }}
+        activeOpacity={0.9}
+      >
+        {/* Header Row */}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: theme.spacing.sm }}>
+          {/* Company Avatar */}
+          {item.companyLogo ? (
+            <Image
+              source={{ uri: item.companyLogo }}
+              style={{
+                width: 50,
+                height: 50,
+                borderRadius: 25,
+                marginRight: theme.spacing.md,
+                borderWidth: 2,
+                borderColor: getStatusColor(),
+              }}
+            />
+          ) : (
+            <View
+              style={{
+                width: 50,
+                height: 50,
+                borderRadius: 25,
+                backgroundColor: theme.colors.background.accent,
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginRight: theme.spacing.md,
+                borderWidth: 2,
+                borderColor: getStatusColor(),
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.base,
+                  fontFamily: theme.typography.fonts.bold,
+                  color: theme.colors.primary.teal,
+                }}
+              >
+                {item.companyInitial}
+              </Text>
+            </View>
+          )}
 
-      {/* Message Content */}
-      <View style={{ flex: 1 }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: theme.spacing.xs,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.base,
-              fontFamily: item.unreadCount > 0 
-                ? theme.typography.fonts.semiBold 
-                : theme.typography.fonts.medium,
-              color: theme.colors.text.primary,
-              flex: 1,
-            }}
-            numberOfLines={1}
-          >
-            {item.companyName}
-          </Text>
-
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs }}>
-            {/* Message type indicator */}
-            {item.messageType === 'file' && (
-              <Ionicons
-                name="document-attach-outline"
-                size={14}
-                color={theme.colors.text.tertiary}
-              />
-            )}
-
-            {/* Blocked indicator */}
-            {item.isBlocked && (
-              <Ionicons
-                name="ban-outline"
-                size={14}
-                color={theme.colors.status.error}
-              />
-            )}
+          {/* Company Info */}
+          <View style={{ flex: 1, marginRight: theme.spacing.sm }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: theme.spacing.xs }}>
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.base,
+                  fontFamily: theme.typography.fonts.semiBold,
+                  color: theme.colors.text.primary,
+                  flex: 1,
+                }}
+                numberOfLines={1}
+              >
+                {item.companyName}
+              </Text>
+              {item.isUrgent && (
+                <View
+                  style={{
+                    backgroundColor: theme.colors.status.error,
+                    borderRadius: theme.borderRadius.sm,
+                    paddingHorizontal: theme.spacing.xs,
+                    paddingVertical: 2,
+                    marginLeft: theme.spacing.xs,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: theme.typography.sizes.xs,
+                      fontFamily: theme.typography.fonts.bold,
+                      color: theme.colors.neutral.white,
+                    }}
+                  >
+                    URGENT
+                  </Text>
+                </View>
+              )}
+            </View>
 
             <Text
               style={{
-                fontSize: theme.typography.sizes.xs,
+                fontSize: theme.typography.sizes.sm,
                 fontFamily: theme.typography.fonts.regular,
-                color: theme.colors.text.tertiary,
+                color: theme.colors.text.secondary,
+                marginBottom: theme.spacing.xs,
               }}
             >
-              {item.timestamp}
+              {item.industry} • {item.companySize} employees
             </Text>
           </View>
-        </View>
 
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <Text
-            style={{
-              fontSize: theme.typography.sizes.sm,
-              fontFamily: theme.typography.fonts.regular,
-              color: item.unreadCount > 0 
-                ? theme.colors.text.primary 
-                : theme.colors.text.secondary,
-              flex: 1,
-              marginRight: theme.spacing.sm,
-            }}
-            numberOfLines={1}
-          >
-            {item.lastMessage}
-          </Text>
-
-          {/* Unread count badge */}
-          {item.unreadCount > 0 && (
+          {/* Status and Match */}
+          <View style={{ alignItems: 'flex-end' }}>
             <View
               style={{
-                backgroundColor: theme.colors.primary.teal,
-                borderRadius: theme.borderRadius.full,
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: `${getStatusColor()}15`,
+                borderRadius: theme.borderRadius.sm,
                 paddingHorizontal: theme.spacing.xs,
                 paddingVertical: 2,
-                minWidth: 20,
-                alignItems: 'center',
+                marginBottom: theme.spacing.xs,
+              }}
+            >
+              <Ionicons
+                name={getStatusIcon()}
+                size={12}
+                color={getStatusColor()}
+                style={{ marginRight: theme.spacing.xs }}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.xs,
+                  fontFamily: theme.typography.fonts.medium,
+                  color: getStatusColor(),
+                  textTransform: 'capitalize',
+                }}
+              >
+                {item.status}
+              </Text>
+            </View>
+
+            <LinearGradient
+              colors={
+                item.matchPercentage >= 80
+                  ? [theme.colors.status.success, '#0D9488']
+                  : item.matchPercentage >= 60
+                  ? [theme.colors.primary.teal, theme.colors.secondary.darkTeal]
+                  : [theme.colors.primary.orange, theme.colors.secondary.darkOrange]
+              }
+              style={{
+                borderRadius: theme.borderRadius.full,
+                paddingHorizontal: theme.spacing.sm,
+                paddingVertical: theme.spacing.xs,
               }}
             >
               <Text
@@ -379,14 +534,242 @@ export default function Messages() {
                   color: theme.colors.neutral.white,
                 }}
               >
-                {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                {item.matchPercentage}% Match
+              </Text>
+            </LinearGradient>
+          </View>
+        </View>
+
+        {/* Position Details */}
+        <Text
+          style={{
+            fontSize: theme.typography.sizes.md,
+            fontFamily: theme.typography.fonts.bold,
+            color: theme.colors.text.primary,
+            marginBottom: theme.spacing.xs,
+          }}
+        >
+          {item.position}
+        </Text>
+
+        {/* Job Info */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: theme.spacing.md, gap: theme.spacing.md }}>
+          {item.location && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
+              <Ionicons
+                name="location-outline"
+                size={14}
+                color={theme.colors.text.tertiary}
+                style={{ marginRight: theme.spacing.xs }}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.regular,
+                  color: theme.colors.text.secondary,
+                }}
+                numberOfLines={1}
+              >
+                {item.location}
+              </Text>
+            </View>
+          )}
+
+          {item.salary && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
+              <Ionicons
+                name="cash-outline"
+                size={14}
+                color={theme.colors.text.tertiary}
+                style={{ marginRight: theme.spacing.xs }}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.regular,
+                  color: theme.colors.text.secondary,
+                }}
+                numberOfLines={1}
+              >
+                {item.salary}
+              </Text>
+            </View>
+          )}
+
+          {item.employmentType && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
+              <Ionicons
+                name="briefcase-outline"
+                size={14}
+                color={theme.colors.text.tertiary}
+                style={{ marginRight: theme.spacing.xs }}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.regular,
+                  color: theme.colors.text.secondary,
+                  textTransform: 'capitalize',
+                }}
+              >
+                {item.employmentType.replace('_', '-')}
+              </Text>
+            </View>
+          )}
+
+          {item.experience && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: '45%' }}>
+              <Ionicons
+                name="time-outline"
+                size={14}
+                color={theme.colors.text.tertiary}
+                style={{ marginRight: theme.spacing.xs }}
+              />
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.regular,
+                  color: theme.colors.text.secondary,
+                }}
+              >
+                {item.experience}
               </Text>
             </View>
           )}
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+
+        {/* Skills */}
+        {item.skills && item.skills.length > 0 && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: theme.spacing.md, gap: theme.spacing.xs }}>
+            {item.skills.slice(0, 3).map((skill, index) => (
+              <View
+                key={`${item.id}_skill_${index}`}
+                style={{
+                  backgroundColor: theme.colors.background.accent,
+                  borderRadius: theme.borderRadius.sm,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xs,
+                  borderWidth: 1,
+                  borderColor: theme.colors.primary.teal,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.medium,
+                    color: theme.colors.primary.teal,
+                  }}
+                >
+                  {skill}
+                </Text>
+              </View>
+            ))}
+            {item.skills.length > 3 && (
+              <View
+                style={{
+                  backgroundColor: theme.colors.neutral.lightGray,
+                  borderRadius: theme.borderRadius.sm,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xs,
+                  borderWidth: 1,
+                  borderColor: theme.colors.border.light,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.medium,
+                    color: theme.colors.text.tertiary,
+                  }}
+                >
+                  +{item.skills.length - 3}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Benefits */}
+        {item.benefits && item.benefits.length > 0 && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: theme.spacing.md, gap: theme.spacing.xs }}>
+            {item.benefits.slice(0, 3).map((benefit, index) => (
+              <View
+                key={`${item.id}_benefit_${index}`}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                }}
+              >
+                <Ionicons
+                  name="checkmark-outline"
+                  size={12}
+                  color={theme.colors.status.success}
+                  style={{ marginRight: theme.spacing.xs }}
+                />
+                <Text
+                  style={{
+                    fontSize: theme.typography.sizes.xs,
+                    fontFamily: theme.typography.fonts.regular,
+                    color: theme.colors.text.secondary,
+                  }}
+                >
+                  {benefit}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Footer */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text
+            style={{
+              fontSize: theme.typography.sizes.xs,
+              fontFamily: theme.typography.fonts.regular,
+              color: theme.colors.text.tertiary,
+            }}
+          >
+            Received {item.proposalTime}
+          </Text>
+{/* {console.log("🚀 Sending proposal to candidate:", item.application_id)} */}
+          <TouchableOpacity
+            onPress={() => handleMatchPress(item)}
+            style={{
+              borderRadius: theme.borderRadius.md,
+              overflow: 'hidden',
+            }}
+            activeOpacity={0.9}
+          >
+            <LinearGradient
+              colors={[theme.colors.primary.teal, theme.colors.secondary.darkTeal]}
+              style={{
+                paddingHorizontal: theme.spacing.md,
+                paddingVertical: theme.spacing.sm,
+                flexDirection: 'row',
+                alignItems: 'center',
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: theme.typography.sizes.sm,
+                  fontFamily: theme.typography.fonts.semiBold,
+                  color: theme.colors.neutral.white,
+                  marginRight: theme.spacing.xs,
+                }}
+              >
+                View Details
+              </Text>
+              <Ionicons
+                name="arrow-forward"
+                size={14}
+                color={theme.colors.neutral.white}
+              />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   // Empty State Component
   const EmptyState = () => (
@@ -412,9 +795,11 @@ export default function Messages() {
       >
         <Ionicons
           name={
-            activeFilter === 'blocked' ? 'ban-outline' :
-            activeFilter === 'unread' ? 'mail-unread-outline' :
-            searchQuery ? 'search-outline' : 'chatbubbles-outline'
+            searchQuery ? 'search-outline' :
+            activeFilter === 'pending' ? 'time-outline' :
+            activeFilter === 'accepted' ? 'checkmark-circle-outline' :
+            activeFilter === 'rejected' ? 'close-circle-outline' :
+            'heart-outline'
           }
           size={32}
           color={theme.colors.primary.teal}
@@ -430,10 +815,11 @@ export default function Messages() {
           textAlign: 'center',
         }}
       >
-        {searchQuery ? 'No results found' :
-         activeFilter === 'blocked' ? 'No blocked conversations' :
-         activeFilter === 'unread' ? 'No unread messages' :
-         'No conversations yet'}
+        {searchQuery ? 'No matches found' :
+         activeFilter === 'pending' ? 'No pending proposals' :
+         activeFilter === 'accepted' ? 'No accepted proposals' :
+         activeFilter === 'rejected' ? 'No rejected proposals' :
+         'No matches yet'}
       </Text>
 
       <Text
@@ -445,10 +831,11 @@ export default function Messages() {
           lineHeight: theme.typography.sizes.base * 1.4,
         }}
       >
-        {searchQuery ? 'Try adjusting your search terms' :
-         activeFilter === 'blocked' ? 'You haven\'t blocked any companies yet' :
-         activeFilter === 'unread' ? 'All messages have been read' :
-         'When companies send you proposals, your conversations will appear here'}
+        {searchQuery ? 'Try adjusting your search terms or filters' :
+         activeFilter === 'pending' ? 'All proposals have been reviewed' :
+         activeFilter === 'accepted' ? 'No accepted proposals to show' :
+         activeFilter === 'rejected' ? 'No rejected proposals to show' :
+         'Companies will appear here when they show interest in your profile'}
       </Text>
     </View>
   );
@@ -469,7 +856,7 @@ export default function Messages() {
           fontFamily: theme.typography.fonts.medium,
           color: theme.colors.text.secondary,
         }}>
-          Loading conversations...
+          Loading proposals...
         </Text>
       </View>
     );
@@ -477,16 +864,34 @@ export default function Messages() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background.primary }}>
+      {/* Background Gradient */}
+      <LinearGradient
+        colors={[
+          theme.colors.background.accent,
+          'rgba(27, 163, 163, 0.02)',
+          theme.colors.background.primary,
+        ]}
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+        }}
+        locations={[0, 0.3, 1]}
+      />
+
       <Header />
       
-      {messages.length === 0 ? (
+      {matches.length === 0 ? (
         <EmptyState />
       ) : (
         <FlatList
-          data={messages}
-          renderItem={({ item }) => <MessageItem item={item} />}
+          data={matches}
+          renderItem={({ item }) => <MatchItem item={item} />}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingVertical: theme.spacing.md }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

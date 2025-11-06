@@ -1,3 +1,4 @@
+import SafeAreaWrapper from '@/components/SafeAreaWrapper';
 import SendProposalModal from '@/components/SendProposalModal';
 import apiService from '@/services/apiService';
 import theme from '@/theme';
@@ -333,7 +334,7 @@ export default function CandidateDetails() {
   }
 
   return (
-    <>
+    <SafeAreaWrapper>
       <StatusBar barStyle="dark-content" backgroundColor={theme.colors.background.primary} />
       <View style={{ flex: 1, backgroundColor: theme.colors.background.primary }}>
         <Header />
@@ -1228,6 +1229,6 @@ export default function CandidateDetails() {
           onProposalSent={handleProposalSent}
         />
       </View>
-    </>
+    </SafeAreaWrapper>
   );
 }
